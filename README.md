@@ -1,16 +1,55 @@
-# empty_player
+# Empty Player
 
-A new Flutter project.
+Simple Flutter video/audio player scaffold with a mini player component and basic navigation pages. Useful as a starter for building a richer media experience.
+
+## Features
+- Mini player overlay (`components/mini_player.dart`) with service-driven state (`services/mini_player_service.dart`).
+- Video list and playback (`pages/video_list_page.dart`, `pages/video_player.dart`).
+- Network stream demo (`pages/network_stream_page.dart`).
+- Basic settings + about pages.
+- Lightweight models (`models/video_item.dart`).
+
+## Project Structure (key parts)
+```
+lib/
+	main.dart                # App entry, routing
+	frame.dart               # Common layout frame
+	components/mini_player.dart
+	models/video_item.dart
+	pages/
+		home_page.dart
+		video_list_page.dart
+		video_player.dart
+		network_stream_page.dart
+		settings_page.dart
+		about_page.dart
+	services/
+		video_service.dart
+		mini_player_service.dart
+		app_settings_service.dart
+	ui/video_frame.dart
+assets/                    # Place static media assets here
+```
 
 ## Getting Started
+1. Ensure Flutter SDK is installed and on PATH.
+2. Fetch dependencies:
+	 ```bash
+	 flutter pub get
+	 ```
+3. Run the app:
+	 ```bash
+	 flutter run
+	 ```
 
-This project is a starting point for a Flutter application.
+## Customization Ideas
+- Integrate a streaming backend (e.g., HLS/DASH).
+- Add playlists & queue management.
+- Persist playback position with `shared_preferences`.
+- Expand settings (brightness, orientation, quality selection).
 
-A few resources to get you started if this is your first Flutter project:
+## License
+See `LICENSE` file for details.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+---
+Made with Flutter.

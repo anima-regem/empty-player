@@ -2,6 +2,8 @@ package com.example.empty_player
 
 import android.app.PictureInPictureParams
 import android.content.res.Configuration
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.util.Rational
 import io.flutter.embedding.android.FlutterActivity
@@ -10,7 +12,9 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.empty_player/pip"
+    private val INTENT_CHANNEL = "com.example.empty_player/intent"
     private var methodChannel: MethodChannel? = null
+    private var intentChannel: MethodChannel? = null
     private var isInPipMode = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -38,6 +42,29 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+
+        // Intent channel for opening videos via external intents
+        intentChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, INTENT_CHANNEL)
+        // Send any initial intent data to Flutter
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(incoming: Intent?) {
+        if (incoming == null) return
+        val action = incoming.action
+        if (action == Intent.ACTION_VIEW || action == Intent.ACTION_SEND) {
+            val dataUri: Uri? = incoming.data ?: incoming.clipData?.getItemAt(0)?.uri
+            dataUri?.let { uri ->
+                // Notify Flutter side to open this video
+                intentChannel?.invokeMethod("openVideo", uri.toString())
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
     }
 
     override fun onPictureInPictureModeChanged(

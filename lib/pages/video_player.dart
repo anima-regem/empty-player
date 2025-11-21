@@ -7,6 +7,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:empty_player/services/app_settings_service.dart';
 import 'package:empty_player/services/mini_player_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class VideoApp extends StatefulWidget {
   final String videoUrl;
@@ -370,6 +371,37 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
             ),
           );
         }
+      }
+    }
+  }
+
+  Future<void> _openExternally() async {
+    // Attempt to launch the video via an external application (system intent)
+    final uri = _videoUrl.startsWith('http') || _videoUrl.startsWith('rtsp')
+        ? Uri.parse(_videoUrl)
+        : Uri.file(_videoUrl);
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open externally'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('External open error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
       }
     }
   }
@@ -805,6 +837,22 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               ),
             ),
           ],
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _openExternally,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.3),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.open_in_new_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          ),
         ],
       ),
     );

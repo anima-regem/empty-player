@@ -38,6 +38,23 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Allow opening video files/streams from other apps -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <!-- Support common video MIME types -->
+                <data android:mimeType="video/*"/>
+                <!-- Allow file/content schemes -->
+                <data android:scheme="file"/>
+                <data android:scheme="content"/>
+            </intent-filter>
+            <!-- Optional: Handle generic media send/open (e.g., choosing this player) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="video/*"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
