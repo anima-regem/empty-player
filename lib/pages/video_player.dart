@@ -6,6 +6,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:empty_player/services/app_settings_service.dart';
+import 'package:empty_player/services/mini_player_service.dart';
 
 class VideoApp extends StatefulWidget {
   final String videoUrl;
@@ -55,6 +56,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
 
   // Global settings service
   final AppSettingsService _appSettings = AppSettingsService();
+  final MiniPlayerService _miniPlayerService = MiniPlayerService();
 
   // Extended media settings (placeholders)
   final List<String> _audioTracks = ['Track 1'];
@@ -67,30 +69,49 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _initializeSettings();
-    _controller = VideoPlayerController.networkUrl(
-      Uri.parse(_videoUrl),
-    )..initialize().then((_) {
-        if (mounted) {
-          setState(() {
-            // Get video metadata after initialization
-            final size = _controller.value.size;
-            _videoResolution = '${size.width.toInt()} x ${size.height.toInt()}';
-            _videoDuration = _formatDuration(_controller.value.duration);
-            // Apply default playback speed from settings once initialized
-            _controller.setPlaybackSpeed(_playbackSpeed);
-          });
-        }
-      }).catchError((error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error loading video: $error'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
+    
+    // Check if we're resuming from mini player
+    final existingController = _miniPlayerService.controller;
+    final isSameVideo = _miniPlayerService.videoUrl == _videoUrl;
+    
+    if (existingController != null && isSameVideo && existingController.value.isInitialized) {
+      // Reuse existing controller from mini player
+      _controller = existingController;
+      setState(() {
+        final size = _controller.value.size;
+        _videoResolution = '${size.width.toInt()} x ${size.height.toInt()}';
+        _videoDuration = _formatDuration(_controller.value.duration);
+        _controller.setPlaybackSpeed(_playbackSpeed);
       });
+    } else {
+      // Create new controller
+      _controller = VideoPlayerController.networkUrl(
+        Uri.parse(_videoUrl),
+      )..initialize().then((_) {
+          if (mounted) {
+            setState(() {
+              // Get video metadata after initialization
+              final size = _controller.value.size;
+              _videoResolution = '${size.width.toInt()} x ${size.height.toInt()}';
+              _videoDuration = _formatDuration(_controller.value.duration);
+              // Apply default playback speed from settings once initialized
+              _controller.setPlaybackSpeed(_playbackSpeed);
+            });
+            // Set to mini player service
+            _miniPlayerService.setController(_controller, _videoUrl, _videoTitle);
+          }
+        }).catchError((error) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error loading video: $error'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
+        });
+    }
     
     // Only rebuild on specific state changes, not every frame
     _controller.addListener(_onVideoStateChanged);
@@ -432,12 +453,18 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
         
-        // If video is playing and PiP is supported, enter PiP mode
-        if (_controller.value.isPlaying && _isPipSupported && _appSettings.pipOnCloseEnabled) {
-          await _enablePiP();
-          // Don't pop the route - let the user stay in PiP
+        // If video is playing, minimize to mini player
+        if (_controller.value.isPlaying) {
+          // Save controller to mini player service
+          _miniPlayerService.setController(_controller, _videoUrl, _videoTitle);
+          _miniPlayerService.minimize();
+          // Pop without disposing controller
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
         } else {
-          // If not playing or PiP not supported, just pop normally
+          // If not playing, clear mini player and pop normally
+          _miniPlayerService.clearController();
           if (mounted) {
             Navigator.of(context).pop();
           }
@@ -1559,7 +1586,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     _volumeIndicatorTimer?.cancel();
     _brightnessIndicatorTimer?.cancel();
     _dragDebounceTimer?.cancel();
-    _controller.dispose();
+    
+    // Only dispose controller if not minimized to mini player
+    if (!_miniPlayerService.isMinimized || _miniPlayerService.controller != _controller) {
+      _controller.dispose();
+    }
     
     // Disable wakelock when leaving
     WakelockPlus.disable();

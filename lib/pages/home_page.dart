@@ -8,6 +8,7 @@ import 'package:empty_player/pages/settings_page.dart';
 import 'package:empty_player/pages/about_page.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:empty_player/components/mini_player.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -134,29 +135,41 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _buildHeader(),
-            const SizedBox(height: 8),
-            _buildTabs(),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _isLoading
-                  ? _buildLoadingState()
-                  : _permissionDenied
-                      ? _buildPermissionDeniedState()
-                      : TabBarView(
-                          controller: _tabController,
-                          children: [
-                            _buildFoldersView(),
-                            _buildAllVideosView(),
-                          ],
-                        ),
+            Column(
+              children: [
+                _buildHeader(),
+                const SizedBox(height: 8),
+                _buildTabs(),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: _isLoading
+                      ? _buildLoadingState()
+                      : _permissionDenied
+                          ? _buildPermissionDeniedState()
+                          : TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildFoldersView(),
+                                _buildAllVideosView(),
+                              ],
+                            ),
+                ),
+                const SizedBox(height: 80), // Space for mini player
+              ],
+            ),
+            // Mini player at bottom
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: const MiniPlayer(),
             ),
           ],
         ),
       ),
- );
+    );
   }
 
   Widget _buildHeader() {
@@ -500,9 +513,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () {
+        onTap: () async {
           // Play video - navigate to video player
-          Navigator.push(
+          await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => VideoApp(
