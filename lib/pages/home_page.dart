@@ -424,16 +424,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 24),
           Text(
-            'Scanning videos',
+            'empty player',
             style: GoogleFonts.lato(
               color: Colors.white,
-              fontSize: 16,
+              fontSize: 20,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Please wait...',
+            'Scanning videos...',
             style: GoogleFonts.lato(
               color: Colors.grey.shade600,
               fontSize: 14,
