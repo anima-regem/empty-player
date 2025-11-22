@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 
 /// A fun loading animation widget.
 /// 
@@ -25,15 +26,18 @@ class LoadingAnimation extends StatefulWidget {
 }
 
 class _LoadingAnimationState extends State<LoadingAnimation>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+    with TickerProviderStateMixin {
+  late AnimationController _scaleController;
+  late AnimationController _rotationController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _rotationAnimation;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    
+    // Scale animation with reverse
+    _scaleController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     )..repeat(reverse: true);
@@ -42,22 +46,29 @@ class _LoadingAnimationState extends State<LoadingAnimation>
       begin: 0.8,
       end: 1.2,
     ).animate(CurvedAnimation(
-      parent: _controller,
+      parent: _scaleController,
       curve: Curves.easeInOut,
     ));
 
+    // Rotation animation without reverse (continuous rotation)
+    _rotationController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    )..repeat();
+
     _rotationAnimation = Tween<double>(
       begin: 0,
-      end: 2 * 3.14159,
+      end: 2 * math.pi,
     ).animate(CurvedAnimation(
-      parent: _controller,
+      parent: _rotationController,
       curve: Curves.linear,
     ));
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _scaleController.dispose();
+    _rotationController.dispose();
     super.dispose();
   }
 
@@ -67,7 +78,7 @@ class _LoadingAnimationState extends State<LoadingAnimation>
       width: widget.size,
       height: widget.size,
       child: AnimatedBuilder(
-        animation: _controller,
+        animation: Listenable.merge([_scaleController, _rotationController]),
         builder: (context, child) {
           return Transform.rotate(
             angle: _rotationAnimation.value,
