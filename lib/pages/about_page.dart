@@ -11,8 +11,7 @@ class AboutPage extends StatelessWidget {
 
   Future<void> _openRepo() async {
     if (!await launchUrl(_repoUrl, mode: LaunchMode.externalApplication)) {
-      // ignore: avoid_print
-      print('Could not launch $_repoUrl');
+      debugPrint('Could not launch $_repoUrl');
     }
   }
 

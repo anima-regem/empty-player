@@ -75,7 +75,7 @@ class _HomePageState extends State<HomePage>
         });
       }
     } catch (e) {
-      print('Error loading videos: $e');
+      debugPrint('Error loading videos: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -525,7 +525,7 @@ class _HomePageState extends State<HomePage>
                           vertical: 3,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.8),
+                          color: Colors.black.withValues(alpha: 0.8),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(

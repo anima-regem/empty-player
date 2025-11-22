@@ -17,7 +17,7 @@ class VideoApp extends StatefulWidget {
   const VideoApp({super.key, required this.videoUrl, this.videoTitle});
 
   @override
-  _VideoAppState createState() => _VideoAppState();
+  State<VideoApp> createState() => _VideoAppState();
 }
 
 class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
@@ -158,7 +158,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     switch (call.method) {
       case 'onPipModeChanged':
         final bool isInPipMode = call.arguments as bool;
-        print('PiP mode changed: $isInPipMode');
+        debugPrint('PiP mode changed: $isInPipMode');
         // Optionally adjust UI or behavior when entering/exiting PiP
         break;
     }
@@ -174,7 +174,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         });
       }
     } catch (e) {
-      print('PiP initialization error: $e');
+      debugPrint('PiP initialization error: $e');
       setState(() {
         _isPipSupported = false;
       });
@@ -377,7 +377,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       try {
         await platform.invokeMethod('enterPipMode');
       } catch (e) {
-        print('Error enabling PiP: $e');
+        debugPrint('Error enabling PiP: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -409,7 +409,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         );
       }
     } catch (e) {
-      print('External open error: $e');
+      debugPrint('External open error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -598,7 +598,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                         width: 100,
                         height: 100,
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
+                          color: Colors.black.withValues(alpha: 0.6),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -627,7 +627,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                       width: 50,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.8),
+                        color: Colors.black.withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(25),
                       ),
                       child: Column(
@@ -643,7 +643,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                                     horizontal: 18,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.withOpacity(0.3),
+                                    color: Colors.grey.withValues(alpha: 0.3),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ),
@@ -703,7 +703,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                       width: 50,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.8),
+                        color: Colors.black.withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(25),
                       ),
                       child: Column(
@@ -719,7 +719,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                                     horizontal: 18,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.withOpacity(0.3),
+                                    color: Colors.grey.withValues(alpha: 0.3),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ),
@@ -819,7 +819,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(alpha: 0.3),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -849,7 +849,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               child: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -866,7 +866,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(alpha: 0.3),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -917,9 +917,9 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                       value: position.inMilliseconds.toDouble(),
                       max: duration.inMilliseconds.toDouble(),
                       activeColor: Colors.red,
-                      inactiveColor: Colors.grey.withOpacity(0.5),
+                      inactiveColor: Colors.grey.withValues(alpha: 0.5),
                       secondaryTrackValue: buffered.inMilliseconds.toDouble(),
-                      secondaryActiveColor: Colors.white.withOpacity(0.3),
+                      secondaryActiveColor: Colors.white.withValues(alpha: 0.3),
                       onChanged: (value) {
                         _controller.seekTo(
                           Duration(milliseconds: value.toInt()),
@@ -1010,7 +1010,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -1027,7 +1027,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -1058,7 +1058,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.8),
+                color: Colors.black.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -1324,7 +1324,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 ),
                 const Divider(color: Colors.grey),
                 // Speed options
-                ...(_speedOptions.map((speed) {
+                ..._speedOptions.map((speed) {
                   final isSelected = _playbackSpeed == speed;
                   return ListTile(
                     title: Text(
@@ -1351,7 +1351,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                       _resetHideTimer();
                     },
                   );
-                }).toList()),
+                }),
                 const SizedBox(height: 16),
               ],
             ),
@@ -1571,7 +1571,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                   _showSettingsDialog();
                 },
               );
-            }).toList(),
+            }),
             const SizedBox(height: 12),
           ],
         ),
