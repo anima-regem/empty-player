@@ -474,36 +474,41 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     }
     
     if (!_controller.value.isInitialized) {
-      return const Center(
-        child: CompactLoadingAnimation(
-          color: Colors.red,
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: const Center(
+          child: CompactLoadingAnimation(
+            color: Colors.red,
+          ),
         ),
       );
     }
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result) async {
-        if (didPop) return;
-        
-        // If video is playing, minimize to mini player
-        if (_controller.value.isPlaying) {
-          // Save controller to mini player service
-          _miniPlayerService.setController(_controller, _videoUrl, _videoTitle);
-          _miniPlayerService.minimize();
-          // Pop without disposing controller
-          if (mounted) {
-            Navigator.of(context).pop();
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (bool didPop, dynamic result) async {
+          if (didPop) return;
+          
+          // If video is playing, minimize to mini player
+          if (_controller.value.isPlaying) {
+            // Save controller to mini player service
+            _miniPlayerService.setController(_controller, _videoUrl, _videoTitle);
+            _miniPlayerService.minimize();
+            // Pop without disposing controller
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
+          } else {
+            // If not playing, clear mini player and pop normally
+            _miniPlayerService.clearController();
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
           }
-        } else {
-          // If not playing, clear mini player and pop normally
-          _miniPlayerService.clearController();
-          if (mounted) {
-            Navigator.of(context).pop();
-          }
-        }
-      },
-      child: GestureDetector(
+        },
+        child: GestureDetector(
       onTapDown: (details) {
         final size = MediaQuery.of(context).size;
         final tapPosition = details.globalPosition;
@@ -751,6 +756,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               child: _buildControls(),
             ),
         ],
+      ),
       ),
       ),
     );
