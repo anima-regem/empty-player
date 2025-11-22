@@ -4,6 +4,7 @@ Simple Flutter video/audio player scaffold with a mini player component and basi
 
 ## Features
 - Mini player overlay (`components/mini_player.dart`) with service-driven state (`services/mini_player_service.dart`).
+- Fun loading animations (`components/loading_animation.dart`) with pulsating and rotating effects.
 - Video list and playback (`pages/video_list_page.dart`, `pages/video_player.dart`).
 - Network stream demo (`pages/network_stream_page.dart`).
 - Basic settings + about pages.
@@ -14,7 +15,9 @@ Simple Flutter video/audio player scaffold with a mini player component and basi
 lib/
 	main.dart                # App entry, routing
 	frame.dart               # Common layout frame
-	components/mini_player.dart
+	components/
+		mini_player.dart         # Mini player component
+		loading_animation.dart   # Fun loading animations
 	models/video_item.dart
 	pages/
 		home_page.dart
