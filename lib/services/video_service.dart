@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:empty_player/models/video_item.dart';
@@ -63,7 +64,7 @@ class VideoService {
         return status.isGranted;
       }
     } catch (e) {
-      print('Error checking permission: $e');
+      debugPrint('Error checking permission: $e');
     }
     return false;
   }
@@ -78,12 +79,12 @@ class VideoService {
         // Android 13+ (API 33+) - use READ_MEDIA_VIDEO
         if (sdkInt >= 33) {
           final status = await Permission.videos.request();
-          print('Android 13+ video permission status: $status');
+          debugPrint('Android 13+ video permission status: $status');
           return status;
         } else {
           // Android 12 and below - use READ_EXTERNAL_STORAGE
           final status = await Permission.storage.request();
-          print('Android 12- storage permission status: $status');
+          debugPrint('Android 12- storage permission status: $status');
           return status;
         }
       } else if (Platform.isIOS) {
@@ -91,7 +92,7 @@ class VideoService {
         return status;
       }
     } catch (e) {
-      print('Error requesting permission: $e');
+      debugPrint('Error requesting permission: $e');
     }
     return PermissionStatus.denied;
   }
@@ -133,7 +134,7 @@ class VideoService {
         DateTime.now().millisecondsSinceEpoch,
       );
     } catch (e) {
-      print('Error saving cache: $e');
+      debugPrint('Error saving cache: $e');
     }
   }
 
@@ -159,7 +160,7 @@ class VideoService {
           .map((json) => VideoItem.fromJson(json as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      print('Error loading cache: $e');
+      debugPrint('Error loading cache: $e');
       return null;
     }
   }
@@ -170,9 +171,9 @@ class VideoService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_cacheKey);
       await prefs.remove(_cacheTimestampKey);
-      print('Video cache cleared');
+      debugPrint('Video cache cleared');
     } catch (e) {
-      print('Error clearing cache: $e');
+      debugPrint('Error clearing cache: $e');
     }
   }
 
@@ -182,11 +183,11 @@ class VideoService {
       // Try to load from cache first
       final cachedVideos = await _loadCache();
       if (cachedVideos != null && cachedVideos.isNotEmpty) {
-        print('Loaded ${cachedVideos.length} videos from cache');
+        debugPrint('Loaded ${cachedVideos.length} videos from cache');
         return cachedVideos;
       }
 
-      print('Scanning videos from device...');
+      debugPrint('Scanning videos from device...');
       // Don't check permission here - assume it's already granted
       final List<AssetPathEntity> albums = await PhotoManager.getAssetPathList(
         type: RequestType.video,
@@ -206,7 +207,7 @@ class VideoService {
           processedCount++;
 
           if (processedCount % 100 == 0) {
-            print('Processing: $processedCount videos');
+            debugPrint('Processing: $processedCount videos');
           }
 
           try {
@@ -238,14 +239,14 @@ class VideoService {
       // Save to cache
       if (allVideos.isNotEmpty) {
         await _saveCache(allVideos);
-        print('Completed: ${allVideos.length} videos scanned');
+        debugPrint('Completed: ${allVideos.length} videos scanned');
       } else {
-        print('No videos found');
+        debugPrint('No videos found');
       }
 
       return allVideos;
     } catch (e) {
-      print('Error scanning videos: $e');
+      debugPrint('Error scanning videos: $e');
       return [];
     }
   }
@@ -287,7 +288,7 @@ class VideoService {
 
       return {'videos': allVideos, 'folders': folders};
     } catch (e) {
-      print('Error getting all videos: $e');
+      debugPrint('Error getting all videos: $e');
       return {'videos': <VideoItem>[], 'folders': <VideoFolder>[]};
     }
   }
