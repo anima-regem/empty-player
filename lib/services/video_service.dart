@@ -14,12 +14,13 @@ class VideoService {
   
   // List of valid video file extensions
   static const List<String> _validVideoExtensions = [
-    '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', 
-    '.webm', '.m4v', '.3gp', '.3g2', '.mpg', '.mpeg',
-    '.m2v', '.m4p', '.ogv', '.ts', '.mts', '.m2ts'
+    '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v',
+    '.3gp', '.3g2', '.mpg', '.mpeg', '.m2v', '.m4p', '.ogv',
+    '.ts', '.mts', '.m2ts'
   ];
   
-  /// Check if a file path has a valid video extension
+  /// Check if a file path has a valid video extension.
+  /// Returns false if the file path is null or empty.
   static bool _isValidVideoFile(String filePath) {
     if (filePath.isEmpty) return false;
     final extension = path.extension(filePath).toLowerCase();
