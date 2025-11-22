@@ -21,6 +21,7 @@ class VideoService {
   
   /// Check if a file path has a valid video extension
   static bool _isValidVideoFile(String filePath) {
+    if (filePath.isEmpty) return false;
     final extension = path.extension(filePath).toLowerCase();
     return _validVideoExtensions.contains(extension);
   }
