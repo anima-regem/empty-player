@@ -4,7 +4,8 @@ import 'package:http/http.dart' as http;
 class UpdateCheckService {
   static const String _owner = 'anima-regem';
   static const String _repo = 'empty-player';
-  static const String _apiUrl = 'https://api.github.com/repos/$_owner/$_repo/releases/latest';
+  static const String _apiUrl =
+      'https://api.github.com/repos/$_owner/$_repo/releases/latest';
 
   /// Fetches the latest release information from GitHub
   /// Returns a map with 'tag_name', 'name', 'body', 'html_url', 'published_at'
@@ -13,9 +14,7 @@ class UpdateCheckService {
     try {
       final response = await http.get(
         Uri.parse(_apiUrl),
-        headers: {
-          'Accept': 'application/vnd.github+json',
-        },
+        headers: {'Accept': 'application/vnd.github+json'},
       );
 
       if (response.statusCode == 200) {
@@ -44,8 +43,14 @@ class UpdateCheckService {
     final current = currentVersion.replaceFirst(RegExp(r'^v'), '');
     final latest = newVersion.replaceFirst(RegExp(r'^v'), '');
 
-    final currentParts = current.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-    final latestParts = latest.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+    final currentParts = current
+        .split('.')
+        .map((e) => int.tryParse(e) ?? 0)
+        .toList();
+    final latestParts = latest
+        .split('.')
+        .map((e) => int.tryParse(e) ?? 0)
+        .toList();
 
     // Ensure both have at least 3 parts (major.minor.patch)
     while (currentParts.length < 3) {

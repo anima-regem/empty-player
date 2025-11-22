@@ -147,7 +147,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 _sectionHeader('About'),
                 ListTile(
                   title: Text('Version', style: GoogleFonts.lato()),
-                  subtitle: Text(_currentVersion, style: GoogleFonts.lato(fontSize: 12)),
+                  subtitle: Text(
+                    _currentVersion,
+                    style: GoogleFonts.lato(fontSize: 12),
+                  ),
                 ),
                 ListTile(
                   title: Text('Check for Updates', style: GoogleFonts.lato()),
@@ -167,7 +170,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 if (_updateAvailable == true && _latestReleaseUrl != null)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: ElevatedButton.icon(
                       onPressed: _openReleaseUrl,
                       icon: const Icon(Icons.download),
@@ -224,7 +230,10 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     if (_updateAvailable == null) {
-      return Text('Tap to check for updates', style: GoogleFonts.lato(fontSize: 12));
+      return Text(
+        'Tap to check for updates',
+        style: GoogleFonts.lato(fontSize: 12),
+      );
     }
 
     if (_updateAvailable == true) {
