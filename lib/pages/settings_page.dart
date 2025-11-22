@@ -16,6 +16,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _backgroundPlayback = false;
   bool _pipOnClose = true;
   double _defaultSpeed = 1.0;
+  String _loadingAnimationType = 'pulsating';
 
   @override
   void initState() {
@@ -29,6 +30,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _backgroundPlayback = _settings.backgroundPlaybackEnabled;
       _pipOnClose = _settings.pipOnCloseEnabled;
       _defaultSpeed = _settings.defaultPlaybackSpeed;
+      _loadingAnimationType = _settings.loadingAnimationType;
       _loading = false;
     });
   }
@@ -46,6 +48,12 @@ class _SettingsPageState extends State<SettingsPage> {
   void _saveSpeed(double v) {
     setState(() => _defaultSpeed = v);
     _settings.defaultPlaybackSpeed = v;
+  }
+
+  void _saveLoadingAnimationType(String? v) {
+    if (v == null) return;
+    setState(() => _loadingAnimationType = v);
+    _settings.loadingAnimationType = v;
   }
 
   @override
@@ -86,6 +94,26 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       Text('${_defaultSpeed.toStringAsFixed(2)}x', style: GoogleFonts.lato()),
                     ],
+                  ),
+                ),
+                const Divider(),
+                _sectionHeader('Appearance'),
+                ListTile(
+                  title: Text('Loading Animation', style: GoogleFonts.lato()),
+                  subtitle: Text('Choose your preferred loading animation style', style: GoogleFonts.lato(fontSize: 12)),
+                  trailing: DropdownButton<String>(
+                    value: _loadingAnimationType,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'pulsating',
+                        child: Text('Pulsating Circles'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'rive',
+                        child: Text('Anime Cat'),
+                      ),
+                    ],
+                    onChanged: _saveLoadingAnimationType,
                   ),
                 ),
                 const Divider(),

@@ -1,0 +1,20 @@
+IMPORTANT: Setup Required for Rive Animation
+=============================================
+
+To use the Anime Cat loading animation, you need to:
+
+1. Download a Rive animation file from https://rive.app/community
+   - Search for "cat" or "anime" animations
+   - Choose one that loops automatically
+   
+2. Rename the downloaded file to: anime_cat.riv
+
+3. Place it in this directory (assets/)
+
+4. The app will automatically use it when you select "Anime Cat" 
+   in Settings > Appearance > Loading Animation
+
+Until you add the file, the app will fall back to the pulsating 
+circles animation even if Rive is selected.
+
+Alternative: Create your own animation at https://rive.app
