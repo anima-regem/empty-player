@@ -51,9 +51,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings', style: GoogleFonts.lato()),
-      ),
+      appBar: AppBar(title: Text('Settings', style: GoogleFonts.lato())),
       body: _loading
           ? const Center(child: CompactLoadingAnimation())
           : ListView(
@@ -62,13 +60,19 @@ class _SettingsPageState extends State<SettingsPage> {
                 SwitchListTile(
                   value: _backgroundPlayback,
                   title: Text('Background Playback', style: GoogleFonts.lato()),
-                  subtitle: Text('Keep audio playing when leaving the app', style: GoogleFonts.lato(fontSize: 12)),
+                  subtitle: Text(
+                    'Keep audio playing when leaving the app',
+                    style: GoogleFonts.lato(fontSize: 12),
+                  ),
                   onChanged: _saveBackground,
                 ),
                 SwitchListTile(
                   value: _pipOnClose,
                   title: Text('PiP On Close', style: GoogleFonts.lato()),
-                  subtitle: Text('Enter Picture-in-Picture when leaving video page', style: GoogleFonts.lato(fontSize: 12)),
+                  subtitle: Text(
+                    'Enter Picture-in-Picture when leaving video page',
+                    style: GoogleFonts.lato(fontSize: 12),
+                  ),
                   onChanged: _savePip,
                 ),
                 ListTile(
@@ -84,7 +88,10 @@ class _SettingsPageState extends State<SettingsPage> {
                         label: _defaultSpeed.toStringAsFixed(2),
                         onChanged: _saveSpeed,
                       ),
-                      Text('${_defaultSpeed.toStringAsFixed(2)}x', style: GoogleFonts.lato()),
+                      Text(
+                        '${_defaultSpeed.toStringAsFixed(2)}x',
+                        style: GoogleFonts.lato(),
+                      ),
                     ],
                   ),
                 ),
@@ -92,16 +99,25 @@ class _SettingsPageState extends State<SettingsPage> {
                 _sectionHeader('Advanced'),
                 ListTile(
                   title: Text('Audio Tracks', style: GoogleFonts.lato()),
-                  subtitle: Text('Multiple audio tracks not supported with current player.', style: GoogleFonts.lato(fontSize: 12)),
+                  subtitle: Text(
+                    'Multiple audio tracks not supported with current player.',
+                    style: GoogleFonts.lato(fontSize: 12),
+                  ),
                 ),
                 ListTile(
                   title: Text('Subtitles', style: GoogleFonts.lato()),
-                  subtitle: Text('Subtitle loading & calibration UI lives in video page.', style: GoogleFonts.lato(fontSize: 12)),
+                  subtitle: Text(
+                    'Subtitle loading & calibration UI lives in video page.',
+                    style: GoogleFonts.lato(fontSize: 12),
+                  ),
                 ),
                 const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text('Some features are placeholders pending enhanced player integration.', style: GoogleFonts.lato(fontSize: 12, color: Colors.grey)),
+                  child: Text(
+                    'Some features are placeholders pending enhanced player integration.',
+                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                  ),
                 ),
                 const SizedBox(height: 24),
               ],

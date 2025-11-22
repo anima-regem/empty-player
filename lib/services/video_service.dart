@@ -11,14 +11,29 @@ class VideoService {
   static const String _cacheKey = 'video_cache';
   static const String _cacheTimestampKey = 'video_cache_timestamp';
   static const Duration _cacheExpiry = Duration(hours: 24);
-  
+
   // List of valid video file extensions
   static const List<String> _validVideoExtensions = [
-    '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v',
-    '.3gp', '.3g2', '.mpg', '.mpeg', '.m2v', '.m4p', '.ogv',
-    '.ts', '.mts', '.m2ts'
+    '.mp4',
+    '.mkv',
+    '.avi',
+    '.mov',
+    '.wmv',
+    '.flv',
+    '.webm',
+    '.m4v',
+    '.3gp',
+    '.3g2',
+    '.mpg',
+    '.mpeg',
+    '.m2v',
+    '.m4p',
+    '.ogv',
+    '.ts',
+    '.mts',
+    '.m2ts',
   ];
-  
+
   /// Check if a file path has a valid video extension.
   /// Returns false if the file path is null or empty.
   static bool _isValidVideoFile(String filePath) {
@@ -33,7 +48,7 @@ class VideoService {
       if (Platform.isAndroid) {
         final androidInfo = await DeviceInfoPlugin().androidInfo;
         final sdkInt = androidInfo.version.sdkInt;
-        
+
         // Android 13+ (API 33+)
         if (sdkInt >= 33) {
           final status = await Permission.videos.status;
@@ -59,7 +74,7 @@ class VideoService {
       if (Platform.isAndroid) {
         final androidInfo = await DeviceInfoPlugin().androidInfo;
         final sdkInt = androidInfo.version.sdkInt;
-        
+
         // Android 13+ (API 33+) - use READ_MEDIA_VIDEO
         if (sdkInt >= 33) {
           final status = await Permission.videos.request();
@@ -85,9 +100,9 @@ class VideoService {
   static Future<bool> requestPermissions() async {
     if (Platform.isAndroid) {
       final androidInfo = await Permission.storage.status;
-      
+
       // For Android 13+ (API 33+), use photos/videos permissions
-      if (Platform.version.contains('13') || 
+      if (Platform.version.contains('13') ||
           Platform.version.contains('14') ||
           Platform.version.contains('15')) {
         final videosStatus = await Permission.videos.request();
@@ -113,7 +128,10 @@ class VideoService {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = videos.map((v) => v.toJson()).toList();
       await prefs.setString(_cacheKey, jsonEncode(jsonList));
-      await prefs.setInt(_cacheTimestampKey, DateTime.now().millisecondsSinceEpoch);
+      await prefs.setInt(
+        _cacheTimestampKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
     } catch (e) {
       print('Error saving cache: $e');
     }
@@ -124,20 +142,22 @@ class VideoService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final timestamp = prefs.getInt(_cacheTimestampKey);
-      
+
       if (timestamp == null) return null;
-      
+
       final cacheTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
       if (DateTime.now().difference(cacheTime) > _cacheExpiry) {
         // Cache expired
         return null;
       }
-      
+
       final jsonString = prefs.getString(_cacheKey);
       if (jsonString == null) return null;
-      
+
       final jsonList = jsonDecode(jsonString) as List;
-      return jsonList.map((json) => VideoItem.fromJson(json as Map<String, dynamic>)).toList();
+      return jsonList
+          .map((json) => VideoItem.fromJson(json as Map<String, dynamic>))
+          .toList();
     } catch (e) {
       print('Error loading cache: $e');
       return null;
@@ -184,7 +204,7 @@ class VideoService {
 
         for (var asset in assets) {
           processedCount++;
-          
+
           if (processedCount % 100 == 0) {
             print('Processing: $processedCount videos');
           }
@@ -198,14 +218,16 @@ class VideoService {
               continue;
             }
 
-            allVideos.add(VideoItem(
-              name: asset.title ?? path.basename(file.path),
-              path: file.path,
-              thumbnail: null,
-              duration: Duration(seconds: asset.duration),
-              size: await file.length(),
-              dateModified: asset.modifiedDateTime,
-            ));
+            allVideos.add(
+              VideoItem(
+                name: asset.title ?? path.basename(file.path),
+                path: file.path,
+                thumbnail: null,
+                duration: Duration(seconds: asset.duration),
+                size: await file.length(),
+                dateModified: asset.modifiedDateTime,
+              ),
+            );
           } catch (assetError) {
             // Continue with next asset
             continue;
@@ -229,7 +251,9 @@ class VideoService {
   }
 
   /// Organize videos into folders
-  static Future<List<VideoFolder>> organizeIntoFolders(List<VideoItem> videos) async {
+  static Future<List<VideoFolder>> organizeIntoFolders(
+    List<VideoItem> videos,
+  ) async {
     Map<String, List<VideoItem>> folderMap = {};
 
     for (var video in videos) {
@@ -261,16 +285,10 @@ class VideoService {
       final allVideos = await scanAllVideos();
       final folders = await organizeIntoFolders(allVideos);
 
-      return {
-        'videos': allVideos,
-        'folders': folders,
-      };
+      return {'videos': allVideos, 'folders': folders};
     } catch (e) {
       print('Error getting all videos: $e');
-      return {
-        'videos': <VideoItem>[],
-        'folders': <VideoFolder>[],
-      };
+      return {'videos': <VideoItem>[], 'folders': <VideoFolder>[]};
     }
   }
 }

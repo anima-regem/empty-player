@@ -28,9 +28,13 @@ class VideoItem {
     name: json['name'] as String,
     path: json['path'] as String,
     thumbnail: json['thumbnail'] as String?,
-    duration: json['duration'] != null ? Duration(seconds: json['duration'] as int) : null,
+    duration: json['duration'] != null
+        ? Duration(seconds: json['duration'] as int)
+        : null,
     size: json['size'] as int?,
-    dateModified: json['dateModified'] != null ? DateTime.parse(json['dateModified'] as String) : null,
+    dateModified: json['dateModified'] != null
+        ? DateTime.parse(json['dateModified'] as String)
+        : null,
   );
 }
 
@@ -40,9 +44,6 @@ class VideoFolder {
   final List<VideoItem> videos;
   final int videoCount;
 
-  VideoFolder({
-    required this.name,
-    required this.path,
-    required this.videos,
-  }) : videoCount = videos.length;
+  VideoFolder({required this.name, required this.path, required this.videos})
+    : videoCount = videos.length;
 }

@@ -12,7 +12,9 @@ class VideoFrame extends StatefulWidget {
 }
 
 class _VideoFrameState extends State<VideoFrame> {
-  static const _intentChannel = MethodChannel('com.example.empty_player/intent');
+  static const _intentChannel = MethodChannel(
+    'com.example.empty_player/intent',
+  );
   final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
   bool _initializedIntentListener = false;
 
@@ -29,7 +31,8 @@ class _VideoFrameState extends State<VideoFrame> {
     // Handle intents arriving after startup
     _intentChannel.setMethodCallHandler((call) async {
       if (call.method == 'openVideo') {
-        final uri = call.arguments as String; // content:// or file:// or http(s)
+        final uri =
+            call.arguments as String; // content:// or file:// or http(s)
         _openVideoFromIntent(uri);
       }
     });
@@ -42,10 +45,7 @@ class _VideoFrameState extends State<VideoFrame> {
         : 'Video';
     _navKey.currentState?.push(
       MaterialPageRoute(
-        builder: (_) => VideoApp(
-          videoUrl: uri,
-          videoTitle: lastSegment,
-        ),
+        builder: (_) => VideoApp(videoUrl: uri, videoTitle: lastSegment),
       ),
     );
   }

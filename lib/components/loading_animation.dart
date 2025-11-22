@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
 /// A fun loading animation widget.
-/// 
+///
 /// This widget displays a pulsating, rotating animation for loading states
 /// instead of the standard CircularProgressIndicator, making loading more
 /// engaging and playful.
@@ -10,7 +10,7 @@ class LoadingAnimation extends StatefulWidget {
   /// The color to use for the animation.
   /// Defaults to Colors.white.
   final Color color;
-  
+
   /// The size of the loading animation widget.
   /// Defaults to 100x100.
   final double size;
@@ -35,20 +35,16 @@ class _LoadingAnimationState extends State<LoadingAnimation>
   @override
   void initState() {
     super.initState();
-    
+
     // Scale animation with reverse
     _scaleController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     )..repeat(reverse: true);
 
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.2,
-    ).animate(CurvedAnimation(
-      parent: _scaleController,
-      curve: Curves.easeInOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
+    );
 
     // Rotation animation without reverse (continuous rotation)
     _rotationController = AnimationController(
@@ -56,13 +52,9 @@ class _LoadingAnimationState extends State<LoadingAnimation>
       vsync: this,
     )..repeat();
 
-    _rotationAnimation = Tween<double>(
-      begin: 0,
-      end: 2 * math.pi,
-    ).animate(CurvedAnimation(
-      parent: _rotationController,
-      curve: Curves.linear,
-    ));
+    _rotationAnimation = Tween<double>(begin: 0, end: 2 * math.pi).animate(
+      CurvedAnimation(parent: _rotationController, curve: Curves.linear),
+    );
   }
 
   @override
@@ -131,16 +123,10 @@ class _LoadingAnimationState extends State<LoadingAnimation>
 class CompactLoadingAnimation extends StatelessWidget {
   final Color color;
 
-  const CompactLoadingAnimation({
-    super.key,
-    this.color = Colors.white,
-  });
+  const CompactLoadingAnimation({super.key, this.color = Colors.white});
 
   @override
   Widget build(BuildContext context) {
-    return LoadingAnimation(
-      color: color,
-      size: 48,
-    );
+    return LoadingAnimation(color: color, size: 48);
   }
 }

@@ -15,12 +15,15 @@ class AppSettingsService {
     _prefs ??= await SharedPreferences.getInstance();
   }
 
-  bool get backgroundPlaybackEnabled => _prefs?.getBool(_keyBackgroundPlayback) ?? false;
-  set backgroundPlaybackEnabled(bool value) => _prefs?.setBool(_keyBackgroundPlayback, value);
+  bool get backgroundPlaybackEnabled =>
+      _prefs?.getBool(_keyBackgroundPlayback) ?? false;
+  set backgroundPlaybackEnabled(bool value) =>
+      _prefs?.setBool(_keyBackgroundPlayback, value);
 
   bool get pipOnCloseEnabled => _prefs?.getBool(_keyPipOnClose) ?? true;
   set pipOnCloseEnabled(bool value) => _prefs?.setBool(_keyPipOnClose, value);
 
   double get defaultPlaybackSpeed => _prefs?.getDouble(_keyDefaultSpeed) ?? 1.0;
-  set defaultPlaybackSpeed(double value) => _prefs?.setDouble(_keyDefaultSpeed, value);
+  set defaultPlaybackSpeed(double value) =>
+      _prefs?.setDouble(_keyDefaultSpeed, value);
 }

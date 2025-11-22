@@ -61,10 +61,8 @@ class VideoListPage extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => VideoApp(
-                videoUrl: video.path,
-                videoTitle: video.name,
-              ),
+              builder: (context) =>
+                  VideoApp(videoUrl: video.path, videoTitle: video.name),
             ),
           );
         },
@@ -158,7 +156,7 @@ class VideoListPage extends StatelessWidget {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     final seconds = duration.inSeconds.remainder(60);
-    
+
     if (hours > 0) {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }

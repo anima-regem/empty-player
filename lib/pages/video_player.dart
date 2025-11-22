@@ -13,12 +13,8 @@ import 'package:empty_player/components/loading_animation.dart';
 class VideoApp extends StatefulWidget {
   final String videoUrl;
   final String? videoTitle;
-  
-  const VideoApp({
-    super.key,
-    required this.videoUrl,
-    this.videoTitle,
-  });
+
+  const VideoApp({super.key, required this.videoUrl, this.videoTitle});
 
   @override
   _VideoAppState createState() => _VideoAppState();
@@ -36,23 +32,32 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   Timer? _volumeIndicatorTimer;
   Timer? _brightnessIndicatorTimer;
   double _currentBrightness = 0.5;
-  
+
   // Debouncing for drag gestures
   Timer? _dragDebounceTimer;
   bool _wasPlaying = false;
   bool _wasBuffering = false;
-  
+
   // PiP support via platform channel
   static const platform = MethodChannel('com.example.empty_player/pip');
   bool _isPipSupported = false;
   bool _wasPlayingBeforeBackground = false;
-  
-  final List<double> _speedOptions = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-  
+
+  final List<double> _speedOptions = [
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    1.75,
+    2.0,
+  ];
+
   // Video metadata
   String _videoResolution = "";
   String _videoDuration = "";
-  
+
   String get _videoTitle => widget.videoTitle ?? 'Video Player';
   String get _videoUrl => widget.videoUrl;
 
@@ -71,12 +76,14 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _initializeSettings();
-    
+
     // Check if we're resuming from mini player
     final existingController = _miniPlayerService.controller;
     final isSameVideo = _miniPlayerService.videoUrl == _videoUrl;
-    
-    if (existingController != null && isSameVideo && existingController.value.isInitialized) {
+
+    if (existingController != null &&
+        isSameVideo &&
+        existingController.value.isInitialized) {
       // Reuse existing controller from mini player
       _controller = existingController;
       setState(() {
@@ -87,49 +94,55 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       });
     } else {
       // Create new controller
-      _controller = VideoPlayerController.networkUrl(
-        Uri.parse(_videoUrl),
-      )..initialize().then((_) {
-          if (mounted) {
-            setState(() {
-              // Get video metadata after initialization
-              final size = _controller.value.size;
-              _videoResolution = '${size.width.toInt()} x ${size.height.toInt()}';
-              _videoDuration = _formatDuration(_controller.value.duration);
-              // Apply default playback speed from settings once initialized
-              _controller.setPlaybackSpeed(_playbackSpeed);
+      _controller = VideoPlayerController.networkUrl(Uri.parse(_videoUrl))
+        ..initialize()
+            .then((_) {
+              if (mounted) {
+                setState(() {
+                  // Get video metadata after initialization
+                  final size = _controller.value.size;
+                  _videoResolution =
+                      '${size.width.toInt()} x ${size.height.toInt()}';
+                  _videoDuration = _formatDuration(_controller.value.duration);
+                  // Apply default playback speed from settings once initialized
+                  _controller.setPlaybackSpeed(_playbackSpeed);
+                });
+                // Set to mini player service
+                _miniPlayerService.setController(
+                  _controller,
+                  _videoUrl,
+                  _videoTitle,
+                );
+              }
+            })
+            .catchError((error) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error loading video: $error'),
+                    backgroundColor: Colors.red,
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
+              }
             });
-            // Set to mini player service
-            _miniPlayerService.setController(_controller, _videoUrl, _videoTitle);
-          }
-        }).catchError((error) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Error loading video: $error'),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 5),
-              ),
-            );
-          }
-        });
     }
-    
+
     // Only rebuild on specific state changes, not every frame
     _controller.addListener(_onVideoStateChanged);
-    
+
     // Get initial brightness
     _initBrightness();
-    
+
     // Initialize PiP
     _initPiP();
-    
+
     // Enable wakelock to keep screen on during playback
     WakelockPlus.enable();
-    
+
     // Add lifecycle observer for background playback
     WidgetsBinding.instance.addObserver(this);
-    
+
     // Set up method call handler for PiP callbacks
     platform.setMethodCallHandler(_handlePlatformMethod);
   }
@@ -140,7 +153,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       _playbackSpeed = _appSettings.defaultPlaybackSpeed;
     });
   }
-  
+
   Future<dynamic> _handlePlatformMethod(MethodCall call) async {
     switch (call.method) {
       case 'onPipModeChanged':
@@ -150,7 +163,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         break;
     }
   }
-  
+
   Future<void> _initPiP() async {
     try {
       // Check if PiP is supported on this device (Android 8.0+)
@@ -167,14 +180,14 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       });
     }
   }
-  
+
   void _onVideoStateChanged() {
     if (!mounted) return;
-    
+
     // Only rebuild if critical state has changed
     final isPlaying = _controller.value.isPlaying;
     final isBuffering = _controller.value.isBuffering;
-    
+
     if (isPlaying != _wasPlaying || isBuffering != _wasBuffering) {
       setState(() {
         _wasPlaying = isPlaying;
@@ -182,11 +195,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       });
     }
   }
-  
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    
+
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
@@ -197,7 +210,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
           _controller.pause();
         }
         break;
-        
+
       case AppLifecycleState.resumed:
         // App returning from background
         // Resume playback if it was playing before
@@ -205,17 +218,17 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
           _controller.play();
         }
         break;
-        
+
       case AppLifecycleState.detached:
         // App is being terminated
         break;
-        
+
       case AppLifecycleState.hidden:
         // App is hidden but still running
         break;
     }
   }
-  
+
   Future<void> _initBrightness() async {
     try {
       final brightness = await ScreenBrightness().current;
@@ -263,7 +276,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     final currentPosition = _controller.value.position;
     final targetPosition = currentPosition + Duration(seconds: seconds);
     final duration = _controller.value.duration;
-    
+
     if (targetPosition < Duration.zero) {
       _controller.seekTo(Duration.zero);
     } else if (targetPosition > duration) {
@@ -279,11 +292,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     // Positive delta = swipe down = decrease volume
     final volumeChange = -delta / 300; // Adjust sensitivity
     final newVolume = (_currentVolume + volumeChange).clamp(0.0, 1.0);
-    
+
     // Update volume immediately without setState
     _currentVolume = newVolume;
     _controller.setVolume(newVolume);
-    
+
     // Debounce setState calls
     _dragDebounceTimer?.cancel();
     _dragDebounceTimer = Timer(const Duration(milliseconds: 50), () {
@@ -309,13 +322,16 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     // Negative delta = swipe up = increase brightness
     // Positive delta = swipe down = decrease brightness
     final brightnessChange = -delta / 300; // Adjust sensitivity
-    final newBrightness = (_currentBrightness + brightnessChange).clamp(0.0, 1.0);
-    
+    final newBrightness = (_currentBrightness + brightnessChange).clamp(
+      0.0,
+      1.0,
+    );
+
     try {
       // Update brightness immediately
       _currentBrightness = newBrightness;
       await ScreenBrightness().setScreenBrightness(newBrightness);
-      
+
       // Debounce setState calls
       _dragDebounceTimer?.cancel();
       _dragDebounceTimer = Timer(const Duration(milliseconds: 50), () {
@@ -351,13 +367,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         ]);
       } else {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-        ]);
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       }
     });
   }
-  
+
   Future<void> _enablePiP() async {
     if (_isPipSupported) {
       try {
@@ -412,7 +426,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     final seconds = duration.inSeconds.remainder(60);
-    
+
     if (hours > 0) {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }
@@ -430,11 +444,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: Colors.red,
-                  size: 64,
-                ),
+                const Icon(Icons.error_outline, color: Colors.red, size: 64),
                 const SizedBox(height: 20),
                 Text(
                   'Failed to load video',
@@ -472,15 +482,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         ),
       );
     }
-    
+
     if (!_controller.value.isInitialized) {
       return Scaffold(
         backgroundColor: Colors.black,
-        body: const Center(
-          child: CompactLoadingAnimation(
-            color: Colors.red,
-          ),
-        ),
+        body: const Center(child: CompactLoadingAnimation(color: Colors.red)),
       );
     }
 
@@ -490,11 +496,15 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         canPop: false,
         onPopInvokedWithResult: (bool didPop, dynamic result) async {
           if (didPop) return;
-          
+
           // If video is playing, minimize to mini player
           if (_controller.value.isPlaying) {
             // Save controller to mini player service
-            _miniPlayerService.setController(_controller, _videoUrl, _videoTitle);
+            _miniPlayerService.setController(
+              _controller,
+              _videoUrl,
+              _videoTitle,
+            );
             _miniPlayerService.minimize();
             // Pop without disposing controller
             if (mounted) {
@@ -509,255 +519,261 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
           }
         },
         child: GestureDetector(
-      onTapDown: (details) {
-        final size = MediaQuery.of(context).size;
-        final tapPosition = details.globalPosition;
-        
-        // Don't toggle controls if tapping in the bottom 150px (control area) or top 80px (top bar)
-        if (tapPosition.dy > size.height - 150 || tapPosition.dy < 80) {
-          return;
-        }
-        
-        // Check if tap is in the center area (for play/pause button)
-        if (_showControls) {
-          final center = Offset(size.width / 2, size.height / 2);
-          
-          // Check if tap is within 50 pixels of center (button radius)
-          final distance = (tapPosition - center).distance;
-          
-          if (distance <= 50) {
-            // Tapped on center button - toggle play/pause
-            _togglePlayPause();
-            return;
-          }
-        }
-        
-        // Tapped elsewhere - toggle controls
-        _toggleControls();
-      },
-      onVerticalDragUpdate: (details) {
-        final screenWidth = MediaQuery.of(context).size.width;
-        final horizontalPosition = details.globalPosition.dx;
-        
-        // Left side of screen - brightness control
-        if (horizontalPosition < screenWidth / 2) {
-          _handleBrightnessDrag(details.delta.dy);
-        } else {
-          // Right side of screen - volume control
-          _handleVerticalDrag(details.delta.dy);
-        }
-      },
-      onDoubleTapDown: (details) {
-        final screenWidth = MediaQuery.of(context).size.width;
-        final tapPosition = details.globalPosition.dx;
-        
-        if (tapPosition < screenWidth / 3) {
-          _seekRelative(-10);
-          _showSeekFeedback(-10);
-        } else if (tapPosition > screenWidth * 2 / 3) {
-          _seekRelative(10);
-          _showSeekFeedback(10);
-        }
-      },
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Video Player with RepaintBoundary to isolate repaints
-          RepaintBoundary(
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              ),
-            ),
-          ),
+          onTapDown: (details) {
+            final size = MediaQuery.of(context).size;
+            final tapPosition = details.globalPosition;
 
-          // Buffering Indicator
-          if (_controller.value.isBuffering)
-            const CompactLoadingAnimation(
-              color: Colors.red,
-            ),
+            // Don't toggle controls if tapping in the bottom 150px (control area) or top 80px (top bar)
+            if (tapPosition.dy > size.height - 150 || tapPosition.dy < 80) {
+              return;
+            }
 
-          // Center Play/Pause Button (Large) - Always show when controls are visible
-          if (_showControls)
-            IgnorePointer(
-              child: AnimatedScale(
-                scale: _showControls ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
+            // Check if tap is in the center area (for play/pause button)
+            if (_showControls) {
+              final center = Offset(size.width / 2, size.height / 2);
+
+              // Check if tap is within 50 pixels of center (button radius)
+              final distance = (tapPosition - center).distance;
+
+              if (distance <= 50) {
+                // Tapped on center button - toggle play/pause
+                _togglePlayPause();
+                return;
+              }
+            }
+
+            // Tapped elsewhere - toggle controls
+            _toggleControls();
+          },
+          onVerticalDragUpdate: (details) {
+            final screenWidth = MediaQuery.of(context).size.width;
+            final horizontalPosition = details.globalPosition.dx;
+
+            // Left side of screen - brightness control
+            if (horizontalPosition < screenWidth / 2) {
+              _handleBrightnessDrag(details.delta.dy);
+            } else {
+              // Right side of screen - volume control
+              _handleVerticalDrag(details.delta.dy);
+            }
+          },
+          onDoubleTapDown: (details) {
+            final screenWidth = MediaQuery.of(context).size.width;
+            final tapPosition = details.globalPosition.dx;
+
+            if (tapPosition < screenWidth / 3) {
+              _seekRelative(-10);
+              _showSeekFeedback(-10);
+            } else if (tapPosition > screenWidth * 2 / 3) {
+              _seekRelative(10);
+              _showSeekFeedback(10);
+            }
+          },
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Video Player with RepaintBoundary to isolate repaints
+              RepaintBoundary(
                 child: Center(
-                  child: Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      _controller.value.isPlaying 
-                          ? Icons.pause_rounded 
-                          : Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 64,
-                    ),
+                  child: AspectRatio(
+                    aspectRatio: _controller.value.aspectRatio,
+                    child: VideoPlayer(_controller),
                   ),
                 ),
               ),
-            ),
 
-          // Brightness Indicator
-          if (_showBrightnessIndicator)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-              left: _showBrightnessIndicator ? 20 : -80,
-              child: AnimatedOpacity(
-                opacity: _showBrightnessIndicator ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 300),
-                child: Container(
-                  height: 150,
-                  width: 50,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.8),
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [
-                            // Background
-                            Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 18),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            // Filled brightness
-                            AnimatedFractionallySizedBox(
-                              duration: const Duration(milliseconds: 100),
-                              heightFactor: _currentBrightness,
-                              alignment: Alignment.bottomCenter,
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 18),
-                                decoration: BoxDecoration(
-                                  color: Colors.yellow.shade700,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                            ),
-                          ],
+              // Buffering Indicator
+              if (_controller.value.isBuffering)
+                const CompactLoadingAnimation(color: Colors.red),
+
+              // Center Play/Pause Button (Large) - Always show when controls are visible
+              if (_showControls)
+                IgnorePointer(
+                  child: AnimatedScale(
+                    scale: _showControls ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    child: Center(
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _controller.value.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 64,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                    ),
+                  ),
+                ),
 
-                      Icon(
-                        _currentBrightness < 0.3
-                            ? Icons.brightness_low_rounded
-                            : _currentBrightness < 0.7
+              // Brightness Indicator
+              if (_showBrightnessIndicator)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  left: _showBrightnessIndicator ? 20 : -80,
+                  child: AnimatedOpacity(
+                    opacity: _showBrightnessIndicator ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Container(
+                      height: 150,
+                      width: 50,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Stack(
+                              alignment: Alignment.bottomCenter,
+                              children: [
+                                // Background
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.withOpacity(0.3),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                // Filled brightness
+                                AnimatedFractionallySizedBox(
+                                  duration: const Duration(milliseconds: 100),
+                                  heightFactor: _currentBrightness,
+                                  alignment: Alignment.bottomCenter,
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.yellow.shade700,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+
+                          Icon(
+                            _currentBrightness < 0.3
+                                ? Icons.brightness_low_rounded
+                                : _currentBrightness < 0.7
                                 ? Icons.brightness_medium_rounded
                                 : Icons.brightness_high_rounded,
-                        color: Colors.white,
-                        size: 20,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          Text(
+                            '${(_currentBrightness * 100).round()}%',
+                            style: GoogleFonts.lato(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        '${(_currentBrightness * 100).round()}%',
-                        style: GoogleFonts.lato(
-                          color: Colors.white,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
 
-          // Volume Indicator
-          if (_showVolumeIndicator)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-              right: _showVolumeIndicator ? 20 : -80,
-              child: AnimatedOpacity(
-                opacity: _showVolumeIndicator ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 300),
-                child: Container(
-                  height: 150,
-                  width: 50,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.8),
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [
-                            // Background
-                            Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 18),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            // Filled volume
-                            AnimatedFractionallySizedBox(
-                              duration: const Duration(milliseconds: 100),
-                              heightFactor: _currentVolume,
-                              alignment: Alignment.bottomCenter,
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 18),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+              // Volume Indicator
+              if (_showVolumeIndicator)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  right: _showVolumeIndicator ? 20 : -80,
+                  child: AnimatedOpacity(
+                    opacity: _showVolumeIndicator ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Container(
+                      height: 150,
+                      width: 50,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(25),
                       ),
-                      const SizedBox(height: 8),
-                      Icon(
-                        _currentVolume == 0
-                            ? Icons.volume_off_rounded
-                            : _currentVolume < 0.5
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Stack(
+                              alignment: Alignment.bottomCenter,
+                              children: [
+                                // Background
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.withOpacity(0.3),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                // Filled volume
+                                AnimatedFractionallySizedBox(
+                                  duration: const Duration(milliseconds: 100),
+                                  heightFactor: _currentVolume,
+                                  alignment: Alignment.bottomCenter,
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Icon(
+                            _currentVolume == 0
+                                ? Icons.volume_off_rounded
+                                : _currentVolume < 0.5
                                 ? Icons.volume_down_rounded
                                 : Icons.volume_up_rounded,
-                        color: Colors.white,
-                        size: 20,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          Text(
+                            '${(_currentVolume * 100).round()}%',
+                            style: GoogleFonts.lato(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        '${(_currentVolume * 100).round()}%',
-                        style: GoogleFonts.lato(
-                          color: Colors.white,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
 
-          // Controls Overlay
-          if (_showControls)
-            AnimatedOpacity(
-              opacity: _showControls ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 300),
-              child: _buildControls(),
-            ),
-        ],
-      ),
-      ),
+              // Controls Overlay
+              if (_showControls)
+                AnimatedOpacity(
+                  opacity: _showControls ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: _buildControls(),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -882,10 +898,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
             children: [
               Text(
                 _formatDuration(position),
-                style: GoogleFonts.lato(
-                  color: Colors.white,
-                  fontSize: 12,
-                ),
+                style: GoogleFonts.lato(color: Colors.white, fontSize: 12),
               ),
               Expanded(
                 child: SliderTheme(
@@ -908,7 +921,9 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                       secondaryTrackValue: buffered.inMilliseconds.toDouble(),
                       secondaryActiveColor: Colors.white.withOpacity(0.3),
                       onChanged: (value) {
-                        _controller.seekTo(Duration(milliseconds: value.toInt()));
+                        _controller.seekTo(
+                          Duration(milliseconds: value.toInt()),
+                        );
                       },
                       onChangeStart: (_) {
                         _hideTimer?.cancel();
@@ -922,10 +937,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               ),
               Text(
                 _formatDuration(duration),
-                style: GoogleFonts.lato(
-                  color: Colors.white,
-                  fontSize: 12,
-                ),
+                style: GoogleFonts.lato(color: Colors.white, fontSize: 12),
               ),
             ],
           ),
@@ -950,7 +962,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                     iconSize: 36,
                     onPressed: _togglePlayPause,
                   ),
-                  
+
                   // Rewind 10s
                   IconButton(
                     icon: const Icon(Icons.replay_10_rounded),
@@ -958,7 +970,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                     iconSize: 32,
                     onPressed: () => _seekRelative(-10),
                   ),
-                  
+
                   // Forward 10s
                   IconButton(
                     icon: const Icon(Icons.forward_10_rounded),
@@ -966,7 +978,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                     iconSize: 32,
                     onPressed: () => _seekRelative(10),
                   ),
-                  
+
                   // Speed indicator
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -987,7 +999,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                   ),
                 ],
               ),
-              
+
               Row(
                 children: [
                   // Settings Menu
@@ -1019,8 +1031,8 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        _isFullScreen 
-                            ? Icons.fullscreen_exit_rounded 
+                        _isFullScreen
+                            ? Icons.fullscreen_exit_rounded
                             : Icons.fullscreen_rounded,
                         color: Colors.white,
                         size: 24,
@@ -1053,7 +1065,9 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    seconds > 0 ? Icons.forward_10_rounded : Icons.replay_10_rounded,
+                    seconds > 0
+                        ? Icons.forward_10_rounded
+                        : Icons.replay_10_rounded,
                     color: Colors.white,
                     size: 28,
                   ),
@@ -1105,7 +1119,10 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               ),
               // Settings title
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -1143,10 +1160,22 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               ),
               // Audio Track option (placeholder)
               ListTile(
-                leading: const Icon(Icons.audiotrack_rounded, color: Colors.white),
-                title: Text('Audio Track', style: GoogleFonts.lato(color: Colors.white)),
-                subtitle: Text(_audioTracks[_selectedAudioTrack], style: GoogleFonts.lato(fontSize: 12, color: Colors.grey)),
-                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                leading: const Icon(
+                  Icons.audiotrack_rounded,
+                  color: Colors.white,
+                ),
+                title: Text(
+                  'Audio Track',
+                  style: GoogleFonts.lato(color: Colors.white),
+                ),
+                subtitle: Text(
+                  _audioTracks[_selectedAudioTrack],
+                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey,
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _showAudioTrackDialog();
@@ -1155,9 +1184,18 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               // Audio Delay option
               ListTile(
                 leading: const Icon(Icons.timer_outlined, color: Colors.white),
-                title: Text('Audio Delay', style: GoogleFonts.lato(color: Colors.white)),
-                subtitle: Text('${_audioDelayMs.toStringAsFixed(0)} ms', style: GoogleFonts.lato(fontSize: 12, color: Colors.grey)),
-                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                title: Text(
+                  'Audio Delay',
+                  style: GoogleFonts.lato(color: Colors.white),
+                ),
+                subtitle: Text(
+                  '${_audioDelayMs.toStringAsFixed(0)} ms',
+                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey,
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _showAudioDelayDialog();
@@ -1166,8 +1204,14 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               // Subtitles toggle
               SwitchListTile(
                 value: _subtitlesEnabled,
-                secondary: const Icon(Icons.subtitles_rounded, color: Colors.white),
-                title: Text('Subtitles', style: GoogleFonts.lato(color: Colors.white)),
+                secondary: const Icon(
+                  Icons.subtitles_rounded,
+                  color: Colors.white,
+                ),
+                title: Text(
+                  'Subtitles',
+                  style: GoogleFonts.lato(color: Colors.white),
+                ),
                 subtitle: Text(
                   _subtitlesEnabled ? 'Enabled (no file loaded)' : 'Disabled',
                   style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
@@ -1179,9 +1223,18 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               // Subtitle Offset option
               ListTile(
                 leading: const Icon(Icons.tune_rounded, color: Colors.white),
-                title: Text('Subtitle Offset', style: GoogleFonts.lato(color: Colors.white)),
-                subtitle: Text('${_subtitleOffsetSeconds.toStringAsFixed(2)} s', style: GoogleFonts.lato(fontSize: 12, color: Colors.grey)),
-                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                title: Text(
+                  'Subtitle Offset',
+                  style: GoogleFonts.lato(color: Colors.white),
+                ),
+                subtitle: Text(
+                  '${_subtitleOffsetSeconds.toStringAsFixed(2)} s',
+                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey,
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _showSubtitleOffsetDialog();
@@ -1189,12 +1242,18 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               ),
               // Video Info option
               ListTile(
-                leading: const Icon(Icons.info_outline_rounded, color: Colors.white),
+                leading: const Icon(
+                  Icons.info_outline_rounded,
+                  color: Colors.white,
+                ),
                 title: Text(
                   'Video Info',
                   style: GoogleFonts.lato(color: Colors.white),
                 ),
-                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey,
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _showVideoInfoDialog();
@@ -1234,7 +1293,10 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 ),
                 // Speed title
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   child: Row(
                     children: [
                       GestureDetector(
@@ -1243,7 +1305,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                           _showSettingsDialog();
                         },
                         child: const Icon(
-                          Icons.arrow_back_ios_new_rounded, 
+                          Icons.arrow_back_ios_new_rounded,
                           color: Colors.white,
                           size: 20,
                         ),
@@ -1269,11 +1331,16 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                       '${speed}x',
                       style: GoogleFonts.lato(
                         color: isSelected ? Colors.red : Colors.white,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                     trailing: isSelected
-                        ? const Icon(Icons.check_circle_rounded, color: Colors.red)
+                        ? const Icon(
+                            Icons.check_circle_rounded,
+                            color: Colors.red,
+                          )
                         : null,
                     onTap: () {
                       setState(() {
@@ -1300,7 +1367,10 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         ? _controller.value.buffered.last.end
         : Duration.zero;
     final bufferPercentage = _controller.value.duration.inMilliseconds > 0
-        ? (buffered.inMilliseconds / _controller.value.duration.inMilliseconds * 100).toStringAsFixed(1)
+        ? (buffered.inMilliseconds /
+                  _controller.value.duration.inMilliseconds *
+                  100)
+              .toStringAsFixed(1)
         : '0.0';
 
     showModalBottomSheet(
@@ -1329,7 +1399,10 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 ),
                 // Info title
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   child: Row(
                     children: [
                       GestureDetector(
@@ -1364,25 +1437,35 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                     children: [
                       _buildInfoRow('Title', _videoTitle),
                       const SizedBox(height: 16),
-                      _buildInfoRow('Resolution', _videoResolution.isEmpty ? 'Loading...' : _videoResolution),
+                      _buildInfoRow(
+                        'Resolution',
+                        _videoResolution.isEmpty
+                            ? 'Loading...'
+                            : _videoResolution,
+                      ),
                       const SizedBox(height: 16),
-                      _buildInfoRow('Duration', _videoDuration.isEmpty ? 'Loading...' : _videoDuration),
+                      _buildInfoRow(
+                        'Duration',
+                        _videoDuration.isEmpty ? 'Loading...' : _videoDuration,
+                      ),
                       const SizedBox(height: 16),
-                      _buildInfoRow('Current Position', _formatDuration(currentPosition)),
+                      _buildInfoRow(
+                        'Current Position',
+                        _formatDuration(currentPosition),
+                      ),
                       const SizedBox(height: 16),
                       _buildInfoRow('Buffered', '$bufferPercentage%'),
                       const SizedBox(height: 16),
                       _buildInfoRow('Playback Speed', '${_playbackSpeed}x'),
                       const SizedBox(height: 16),
-                      _buildInfoRow('Volume', '${(_currentVolume * 100).toInt()}%'),
+                      _buildInfoRow(
+                        'Volume',
+                        '${(_currentVolume * 100).toInt()}%',
+                      ),
                       const SizedBox(height: 16),
                       _buildInfoRow('Source', 'Network Stream'),
                       const SizedBox(height: 16),
-                      _buildInfoRow(
-                        'URL',
-                        _videoUrl,
-                        isUrl: true,
-                      ),
+                      _buildInfoRow('URL', _videoUrl, isUrl: true),
                     ],
                   ),
                 ),
@@ -1410,10 +1493,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         const SizedBox(height: 4),
         Text(
           value,
-          style: GoogleFonts.lato(
-            color: Colors.white,
-            fontSize: 14,
-          ),
+          style: GoogleFonts.lato(color: Colors.white, fontSize: 14),
           maxLines: isUrl ? 2 : 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1437,18 +1517,35 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               margin: const EdgeInsets.symmetric(vertical: 12),
               width: 40,
               height: 4,
-              decoration: BoxDecoration(color: Colors.grey, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(
+                color: Colors.grey,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () { Navigator.pop(context); _showSettingsDialog(); },
-                    child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showSettingsDialog();
+                    },
+                    child: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                   const SizedBox(width: 16),
-                  Text('Audio Track', style: GoogleFonts.lato(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text(
+                    'Audio Track',
+                    style: GoogleFonts.lato(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1458,8 +1555,16 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
               final name = e.value;
               final selected = idx == _selectedAudioTrack;
               return ListTile(
-                title: Text(name, style: GoogleFonts.lato(color: selected ? Colors.red : Colors.white, fontWeight: selected ? FontWeight.bold : FontWeight.normal)),
-                trailing: selected ? const Icon(Icons.check_circle_rounded, color: Colors.red) : null,
+                title: Text(
+                  name,
+                  style: GoogleFonts.lato(
+                    color: selected ? Colors.red : Colors.white,
+                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                trailing: selected
+                    ? const Icon(Icons.check_circle_rounded, color: Colors.red)
+                    : null,
                 onTap: () {
                   setState(() => _selectedAudioTrack = idx);
                   Navigator.pop(context);
@@ -1492,18 +1597,38 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 margin: const EdgeInsets.symmetric(vertical: 12),
                 width: 40,
                 height: 4,
-                decoration: BoxDecoration(color: Colors.grey, borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(
+                  color: Colors.grey,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () { Navigator.pop(context); _showSettingsDialog(); },
-                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSettingsDialog();
+                      },
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 16),
-                    Text('Audio Delay', style: GoogleFonts.lato(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text(
+                      'Audio Delay',
+                      style: GoogleFonts.lato(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1513,7 +1638,10 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Delay (ms)', style: GoogleFonts.lato(color: Colors.grey, fontSize: 12)),
+                    Text(
+                      'Delay (ms)',
+                      style: GoogleFonts.lato(color: Colors.grey, fontSize: 12),
+                    ),
                     Slider(
                       value: tempDelay,
                       min: -1000,
@@ -1522,13 +1650,22 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                       label: '${tempDelay.round()} ms',
                       onChanged: (v) => setModalState(() => tempDelay = v),
                     ),
-                    Text('${tempDelay.round()} ms', style: GoogleFonts.lato(color: Colors.white, fontSize: 14)),
+                    Text(
+                      '${tempDelay.round()} ms',
+                      style: GoogleFonts.lato(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: () { Navigator.pop(context); _showSettingsDialog(); },
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _showSettingsDialog();
+                          },
                           child: Text('Cancel', style: GoogleFonts.lato()),
                         ),
                         TextButton(
@@ -1537,7 +1674,12 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                             Navigator.pop(context);
                             _showSettingsDialog();
                           },
-                          child: Text('Save', style: GoogleFonts.lato(fontWeight: FontWeight.bold)),
+                          child: Text(
+                            'Save',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -1570,18 +1712,38 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 margin: const EdgeInsets.symmetric(vertical: 12),
                 width: 40,
                 height: 4,
-                decoration: BoxDecoration(color: Colors.grey, borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(
+                  color: Colors.grey,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () { Navigator.pop(context); _showSettingsDialog(); },
-                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSettingsDialog();
+                      },
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 16),
-                    Text('Subtitle Offset', style: GoogleFonts.lato(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text(
+                      'Subtitle Offset',
+                      style: GoogleFonts.lato(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1591,7 +1753,10 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Offset (seconds)', style: GoogleFonts.lato(color: Colors.grey, fontSize: 12)),
+                    Text(
+                      'Offset (seconds)',
+                      style: GoogleFonts.lato(color: Colors.grey, fontSize: 12),
+                    ),
                     Slider(
                       value: tempOffset,
                       min: -5,
@@ -1600,13 +1765,22 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                       label: '${tempOffset.toStringAsFixed(2)} s',
                       onChanged: (v) => setModalState(() => tempOffset = v),
                     ),
-                    Text('${tempOffset.toStringAsFixed(2)} s', style: GoogleFonts.lato(color: Colors.white, fontSize: 14)),
+                    Text(
+                      '${tempOffset.toStringAsFixed(2)} s',
+                      style: GoogleFonts.lato(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: () { Navigator.pop(context); _showSettingsDialog(); },
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _showSettingsDialog();
+                          },
                           child: Text('Cancel', style: GoogleFonts.lato()),
                         ),
                         TextButton(
@@ -1615,7 +1789,12 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                             Navigator.pop(context);
                             _showSettingsDialog();
                           },
-                          child: Text('Save', style: GoogleFonts.lato(fontWeight: FontWeight.bold)),
+                          child: Text(
+                            'Save',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -1635,25 +1814,24 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   void dispose() {
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
-    
+
     _controller.removeListener(_onVideoStateChanged);
     _hideTimer?.cancel();
     _volumeIndicatorTimer?.cancel();
     _brightnessIndicatorTimer?.cancel();
     _dragDebounceTimer?.cancel();
-    
+
     // Only dispose controller if not minimized to mini player
-    if (!_miniPlayerService.isMinimized || _miniPlayerService.controller != _controller) {
+    if (!_miniPlayerService.isMinimized ||
+        _miniPlayerService.controller != _controller) {
       _controller.dispose();
     }
-    
+
     // Disable wakelock when leaving
     WakelockPlus.disable();
-    
+
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-    ]);
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 }

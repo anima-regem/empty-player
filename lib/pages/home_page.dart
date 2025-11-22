@@ -18,7 +18,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<VideoFolder> _folders = [];
   List<VideoItem> _allVideos = [];
@@ -41,18 +42,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     try {
       // Check permission first
       final hasPermission = await VideoService.checkPermission();
-      
+
       if (!hasPermission) {
         // Try to request permission
         final status = await VideoService.requestPermission();
-        
+
         if (!status.isGranted) {
           if (mounted) {
             setState(() {
               _isLoading = false;
               _permissionDenied = true;
             });
-            
+
             // Show dialog if permanently denied
             if (status.isPermanentlyDenied) {
               _showPermissionDialog();
@@ -61,10 +62,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           return;
         }
       }
-      
+
       // If we have permission, load videos
       final result = await VideoService.getAllVideos();
-      
+
       if (mounted) {
         setState(() {
           _folders = result['folders'] as List<VideoFolder>;
@@ -98,9 +99,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
         content: Text(
           'Video access is permanently denied. Please enable it in Settings to view your videos.',
-          style: GoogleFonts.lato(
-            color: Colors.grey.shade400,
-          ),
+          style: GoogleFonts.lato(color: Colors.grey.shade400),
         ),
         actions: [
           TextButton(
@@ -148,25 +147,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   child: _isLoading
                       ? _buildLoadingState()
                       : _permissionDenied
-                          ? _buildPermissionDeniedState()
-                          : TabBarView(
-                              controller: _tabController,
-                              children: [
-                                _buildFoldersView(),
-                                _buildAllVideosView(),
-                              ],
-                            ),
+                      ? _buildPermissionDeniedState()
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildFoldersView(),
+                            _buildAllVideosView(),
+                          ],
+                        ),
                 ),
                 const SizedBox(height: 80), // Space for mini player
               ],
             ),
             // Mini player at bottom
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: const MiniPlayer(),
-            ),
+            Positioned(left: 0, right: 0, bottom: 0, child: const MiniPlayer()),
           ],
         ),
       ),
@@ -208,9 +202,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => const SettingsPage(),
-                ),
+                MaterialPageRoute(builder: (context) => const SettingsPage()),
               );
             },
             icon: const Icon(Icons.settings_outlined, size: 22),
@@ -228,9 +220,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => const AboutPage(),
-                ),
+                MaterialPageRoute(builder: (context) => const AboutPage()),
               );
             },
             icon: const Icon(Icons.info_outline, size: 22),
@@ -381,11 +371,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: Colors.grey.shade700,
-                size: 20,
-              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade700, size: 20),
             ],
           ),
         ),
@@ -419,9 +405,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CompactLoadingAnimation(
-            color: Colors.white,
-          ),
+          const CompactLoadingAnimation(color: Colors.white),
           const SizedBox(height: 24),
           Text(
             'empty player',
@@ -514,10 +498,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => VideoApp(
-                videoUrl: video.path,
-                videoTitle: video.name,
-              ),
+              builder: (context) =>
+                  VideoApp(videoUrl: video.path, videoTitle: video.name),
             ),
           );
         },
@@ -617,7 +599,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     final seconds = duration.inSeconds.remainder(60);
-    
+
     if (hours > 0) {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }

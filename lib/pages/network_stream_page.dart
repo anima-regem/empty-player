@@ -36,8 +36,8 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
       MaterialPageRoute(
         builder: (context) => VideoApp(
           videoUrl: _urlController.text.trim(),
-          videoTitle: _titleController.text.trim().isEmpty 
-              ? 'Network Stream' 
+          videoTitle: _titleController.text.trim().isEmpty
+              ? 'Network Stream'
               : _titleController.text.trim(),
         ),
       ),
@@ -72,7 +72,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 8),
-              
+
               // URL Input
               Text(
                 'Video URL',
@@ -105,9 +105,9 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               // Title Input
               Text(
                 'Title (Optional)',
@@ -139,9 +139,9 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 32),
-              
+
               // Play Button
               SizedBox(
                 height: 48,
@@ -164,9 +164,9 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 32),
-              
+
               // Quick URLs
               Text(
                 'Sample Videos',
@@ -177,7 +177,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                 ),
               ),
               const SizedBox(height: 12),
-              
+
               _buildQuickUrlButton(
                 'Big Buck Bunny',
                 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
@@ -230,11 +230,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                   ),
                 ),
               ),
-              Icon(
-                Icons.arrow_forward,
-                color: Colors.grey.shade700,
-                size: 16,
-              ),
+              Icon(Icons.arrow_forward, color: Colors.grey.shade700, size: 16),
             ],
           ),
         ),

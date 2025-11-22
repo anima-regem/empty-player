@@ -12,25 +12,25 @@ class MiniPlayer extends StatefulWidget {
 
 class _MiniPlayerState extends State<MiniPlayer> {
   final MiniPlayerService _miniPlayerService = MiniPlayerService();
-  
+
   @override
   void initState() {
     super.initState();
     _miniPlayerService.addListener(_onPlayerStateChanged);
   }
-  
+
   @override
   void dispose() {
     _miniPlayerService.removeListener(_onPlayerStateChanged);
     super.dispose();
   }
-  
+
   void _onPlayerStateChanged() {
     if (mounted) {
       setState(() {});
     }
   }
-  
+
   void _openFullPlayer() {
     if (_miniPlayerService.videoUrl != null) {
       _miniPlayerService.maximize();
@@ -45,26 +45,26 @@ class _MiniPlayerState extends State<MiniPlayer> {
       );
     }
   }
-  
+
   void _closePlayer() {
     _miniPlayerService.clearController();
   }
-  
+
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final minutes = duration.inMinutes.remainder(60);
     final seconds = duration.inSeconds.remainder(60);
     return '${twoDigits(minutes)}:${twoDigits(seconds)}';
   }
-  
+
   @override
   Widget build(BuildContext context) {
     if (!_miniPlayerService.hasVideo || !_miniPlayerService.isMinimized) {
       return const SizedBox.shrink();
     }
-    
+
     final controller = _miniPlayerService.controller!;
-    
+
     return GestureDetector(
       onTap: _openFullPlayer,
       child: Container(
@@ -118,7 +118,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
                     ),
                     const SizedBox(height: 4),
                     StreamBuilder(
-                      stream: Stream.periodic(const Duration(milliseconds: 500)),
+                      stream: Stream.periodic(
+                        const Duration(milliseconds: 500),
+                      ),
                       builder: (context, snapshot) {
                         final position = controller.value.position;
                         final duration = controller.value.duration;
@@ -135,7 +137,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
                     const SizedBox(height: 4),
                     // Progress bar
                     StreamBuilder(
-                      stream: Stream.periodic(const Duration(milliseconds: 500)),
+                      stream: Stream.periodic(
+                        const Duration(milliseconds: 500),
+                      ),
                       builder: (context, snapshot) {
                         final position = controller.value.position;
                         final duration = controller.value.duration;
@@ -147,7 +151,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
                           child: LinearProgressIndicator(
                             value: progress,
                             backgroundColor: Colors.grey.shade800,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
                             minHeight: 3,
                           ),
                         );
