@@ -59,12 +59,7 @@ class _LoadingAnimationState extends State<LoadingAnimation> {
         });
       }
     } catch (e) {
-      // Asset doesn't exist, keep _riveAssetExists as false
-      if (mounted) {
-        setState(() {
-          _riveAssetExists = false;
-        });
-      }
+      // Asset doesn't exist, _riveAssetExists remains false (already initialized)
     }
   }
 
@@ -81,9 +76,11 @@ class _LoadingAnimationState extends State<LoadingAnimation> {
 }
 
 /// Rive-based loading animation
+/// Note: The color parameter is accepted for API consistency but not used,
+/// as Rive animations have their own color schemes defined in the .riv file.
 class _RiveLoadingAnimation extends StatelessWidget {
   final double size;
-  final Color color;
+  final Color color; // Kept for API consistency with _PulsatingLoadingAnimation
 
   const _RiveLoadingAnimation({
     required this.size,
