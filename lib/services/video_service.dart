@@ -11,6 +11,21 @@ class VideoService {
   static const String _cacheKey = 'video_cache';
   static const String _cacheTimestampKey = 'video_cache_timestamp';
   static const Duration _cacheExpiry = Duration(hours: 24);
+  
+  // List of valid video file extensions
+  static const List<String> _validVideoExtensions = [
+    '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v',
+    '.3gp', '.3g2', '.mpg', '.mpeg', '.m2v', '.m4p', '.ogv',
+    '.ts', '.mts', '.m2ts'
+  ];
+  
+  /// Check if a file path has a valid video extension.
+  /// Returns false if the file path is null or empty.
+  static bool _isValidVideoFile(String filePath) {
+    if (filePath.isEmpty) return false;
+    final extension = path.extension(filePath).toLowerCase();
+    return _validVideoExtensions.contains(extension);
+  }
 
   /// Check if we have storage permissions
   static Future<bool> checkPermission() async {
@@ -177,6 +192,11 @@ class VideoService {
           try {
             final file = await asset.file;
             if (file == null) continue;
+
+            // Filter out non-video files (e.g., JPEG, PNG)
+            if (!_isValidVideoFile(file.path)) {
+              continue;
+            }
 
             allVideos.add(VideoItem(
               name: asset.title ?? path.basename(file.path),
