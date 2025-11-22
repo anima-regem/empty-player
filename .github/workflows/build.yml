@@ -32,13 +32,14 @@ jobs:
         run: flutter pub get
       
       - name: Verify formatting
-        run: dart format --set-exit-if-changed .
-        continue-on-error: true
+        run: dart format --output=none --set-exit-if-changed .
       
       - name: Analyze code
         run: flutter analyze
       
       - name: Run tests
+        # Allow tests to fail for now as the project may not have tests yet
+        # Remove continue-on-error once tests are added
         run: flutter test
         continue-on-error: true
       
