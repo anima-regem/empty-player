@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:empty_player/frame.dart';
 
 void main() {
-  testWidgets('App starts and builds Frame widget', (WidgetTester tester) async {
+  testWidgets('App starts and builds Frame widget', (
+    WidgetTester tester,
+  ) async {
     // Build our app
     await tester.pumpWidget(const Frame());
 

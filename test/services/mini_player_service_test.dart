@@ -54,7 +54,7 @@ void main() {
 
     test('maximize notifies listeners', () {
       service.minimize();
-      
+
       bool notified = false;
       service.addListener(() {
         notified = true;
@@ -68,7 +68,7 @@ void main() {
     test('clearController resets all state', () {
       // First set some state
       service.minimize();
-      
+
       service.clearController();
 
       expect(service.controller, null);
