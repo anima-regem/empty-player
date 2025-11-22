@@ -1,5 +1,8 @@
 # Empty Player
 
+![Build](https://github.com/anima-regem/empty-player/workflows/Build%20and%20Test/badge.svg)
+![Release](https://github.com/anima-regem/empty-player/workflows/Release/badge.svg)
+
 Simple Flutter video/audio player scaffold with a mini player component and basic navigation pages. Useful as a starter for building a richer media experience.
 
 ## Features
@@ -44,6 +47,34 @@ assets/                    # Place static media assets here
 	 ```bash
 	 flutter run
 	 ```
+
+## CI/CD Pipeline
+
+This project uses GitHub Actions for automated building and releasing:
+
+### Automated Builds
+- **Build workflow** runs on every push and pull request to main/develop branches
+- Performs code quality checks (formatting, analysis, tests)
+- Generates APK artifacts for testing
+- View workflow status in the [Actions tab](../../actions)
+
+### Automated Releases
+- **Release workflow** triggers when a version tag is pushed (e.g., `v1.0.0`)
+- Builds both APK and AAB (App Bundle) files
+- Creates GitHub Release with automated release notes
+- Attaches downloadable artifacts
+
+**To create a release:**
+```bash
+git tag -a v1.0.0 -m "Release version 1.0.0"
+git push origin v1.0.0
+```
+
+See [Release Campaign Plan](.github/RELEASE_CAMPAIGN_PLAN.md) for detailed CI/CD documentation.
+
+## Download
+
+Download the latest release APK from the [Releases page](../../releases).
 
 ## Customization Ideas
 - Integrate a streaming backend (e.g., HLS/DASH).
