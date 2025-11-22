@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:empty_player/services/app_settings_service.dart';
 import 'package:empty_player/services/mini_player_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:empty_player/components/loading_animation.dart';
 
 class VideoApp extends StatefulWidget {
   final String videoUrl;
@@ -474,7 +475,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     
     if (!_controller.value.isInitialized) {
       return const Center(
-        child: CircularProgressIndicator(
+        child: CompactLoadingAnimation(
           color: Colors.red,
         ),
       );
@@ -568,7 +569,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
 
           // Buffering Indicator
           if (_controller.value.isBuffering)
-            const CircularProgressIndicator(
+            const CompactLoadingAnimation(
               color: Colors.red,
             ),
 

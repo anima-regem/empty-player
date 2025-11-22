@@ -9,6 +9,7 @@ import 'package:empty_player/pages/about_page.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:empty_player/components/mini_player.dart';
+import 'package:empty_player/components/loading_animation.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -418,13 +419,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(
-            width: 48,
-            height: 48,
-            child: CircularProgressIndicator(
-              color: Colors.white,
-              strokeWidth: 3,
-            ),
+          const CompactLoadingAnimation(
+            color: Colors.white,
           ),
           const SizedBox(height: 24),
           Text(
