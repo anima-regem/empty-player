@@ -14,7 +14,7 @@ class UpdateCheckService {
       final response = await http.get(
         Uri.parse(_apiUrl),
         headers: {
-          'Accept': 'application/vnd.github.v3+json',
+          'Accept': 'application/vnd.github+json',
         },
       );
 
