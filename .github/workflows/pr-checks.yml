@@ -36,7 +36,8 @@ jobs:
         run: flutter analyze
       
       - name: Run tests
-        # Fail PR if tests fail (stricter than build workflow)
+        # Allow tests to fail for now as the project may not have tests yet
+        # Remove continue-on-error once tests are added
         run: flutter test
         continue-on-error: true
       
