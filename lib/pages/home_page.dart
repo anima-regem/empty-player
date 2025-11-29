@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:empty_player/components/mini_player.dart';
 import 'package:empty_player/components/loading_animation.dart';
+import 'package:empty_player/components/video_thumbnail.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -509,9 +510,9 @@ class _HomePageState extends State<HomePage>
             Expanded(
               child: Stack(
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade900,
+                  Positioned.fill(
+                    child: VideoThumbnail(
+                      assetId: video.assetId,
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),

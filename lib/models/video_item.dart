@@ -2,6 +2,7 @@ class VideoItem {
   final String name;
   final String path;
   final String? thumbnail;
+  final String? assetId;
   final Duration? duration;
   final int? size;
   final DateTime? dateModified;
@@ -10,6 +11,7 @@ class VideoItem {
     required this.name,
     required this.path,
     this.thumbnail,
+    this.assetId,
     this.duration,
     this.size,
     this.dateModified,
@@ -19,6 +21,7 @@ class VideoItem {
     'name': name,
     'path': path,
     'thumbnail': thumbnail,
+    'assetId': assetId,
     'duration': duration?.inSeconds,
     'size': size,
     'dateModified': dateModified?.toIso8601String(),
@@ -28,6 +31,7 @@ class VideoItem {
     name: json['name'] as String,
     path: json['path'] as String,
     thumbnail: json['thumbnail'] as String?,
+    assetId: json['assetId'] as String?,
     duration: json['duration'] != null
         ? Duration(seconds: json['duration'] as int)
         : null,

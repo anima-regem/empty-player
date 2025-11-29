@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:empty_player/models/video_item.dart';
 import 'package:empty_player/pages/video_player.dart';
+import 'package:empty_player/components/video_thumbnail.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class VideoListPage extends StatelessWidget {
@@ -70,11 +71,13 @@ class VideoListPage extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
           child: Row(
             children: [
-              Container(
+              SizedBox(
                 width: 100,
                 height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade900,
+                child: VideoThumbnail(
+                  assetId: video.assetId,
+                  width: 100,
+                  height: 56,
                   borderRadius: BorderRadius.circular(6),
                 ),
               ),

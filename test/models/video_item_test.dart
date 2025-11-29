@@ -12,6 +12,7 @@ void main() {
       expect(videoItem.name, 'test_video.mp4');
       expect(videoItem.path, '/storage/videos/test_video.mp4');
       expect(videoItem.thumbnail, null);
+      expect(videoItem.assetId, null);
       expect(videoItem.duration, null);
       expect(videoItem.size, null);
       expect(videoItem.dateModified, null);
@@ -25,6 +26,7 @@ void main() {
         name: 'test_video.mp4',
         path: '/storage/videos/test_video.mp4',
         thumbnail: '/storage/thumbnails/test.jpg',
+        assetId: 'asset_123',
         duration: duration,
         size: 1024000,
         dateModified: dateTime,
@@ -33,6 +35,7 @@ void main() {
       expect(videoItem.name, 'test_video.mp4');
       expect(videoItem.path, '/storage/videos/test_video.mp4');
       expect(videoItem.thumbnail, '/storage/thumbnails/test.jpg');
+      expect(videoItem.assetId, 'asset_123');
       expect(videoItem.duration, duration);
       expect(videoItem.size, 1024000);
       expect(videoItem.dateModified, dateTime);
@@ -46,6 +49,7 @@ void main() {
         name: 'test_video.mp4',
         path: '/storage/videos/test_video.mp4',
         thumbnail: '/storage/thumbnails/test.jpg',
+        assetId: 'asset_123',
         duration: duration,
         size: 1024000,
         dateModified: dateTime,
@@ -56,6 +60,7 @@ void main() {
       expect(json['name'], 'test_video.mp4');
       expect(json['path'], '/storage/videos/test_video.mp4');
       expect(json['thumbnail'], '/storage/thumbnails/test.jpg');
+      expect(json['assetId'], 'asset_123');
       expect(json['duration'], 120);
       expect(json['size'], 1024000);
       expect(json['dateModified'], dateTime.toIso8601String());
@@ -72,6 +77,7 @@ void main() {
       expect(json['name'], 'test_video.mp4');
       expect(json['path'], '/storage/videos/test_video.mp4');
       expect(json['thumbnail'], null);
+      expect(json['assetId'], null);
       expect(json['duration'], null);
       expect(json['size'], null);
       expect(json['dateModified'], null);
@@ -83,6 +89,7 @@ void main() {
         'name': 'test_video.mp4',
         'path': '/storage/videos/test_video.mp4',
         'thumbnail': '/storage/thumbnails/test.jpg',
+        'assetId': 'asset_123',
         'duration': 120,
         'size': 1024000,
         'dateModified': dateTime.toIso8601String(),
@@ -93,6 +100,7 @@ void main() {
       expect(videoItem.name, 'test_video.mp4');
       expect(videoItem.path, '/storage/videos/test_video.mp4');
       expect(videoItem.thumbnail, '/storage/thumbnails/test.jpg');
+      expect(videoItem.assetId, 'asset_123');
       expect(videoItem.duration, Duration(seconds: 120));
       expect(videoItem.size, 1024000);
       expect(videoItem.dateModified, dateTime);
@@ -103,6 +111,7 @@ void main() {
         'name': 'test_video.mp4',
         'path': '/storage/videos/test_video.mp4',
         'thumbnail': null,
+        'assetId': null,
         'duration': null,
         'size': null,
         'dateModified': null,
@@ -113,6 +122,7 @@ void main() {
       expect(videoItem.name, 'test_video.mp4');
       expect(videoItem.path, '/storage/videos/test_video.mp4');
       expect(videoItem.thumbnail, null);
+      expect(videoItem.assetId, null);
       expect(videoItem.duration, null);
       expect(videoItem.size, null);
       expect(videoItem.dateModified, null);
@@ -124,6 +134,7 @@ void main() {
         name: 'test_video.mp4',
         path: '/storage/videos/test_video.mp4',
         thumbnail: '/storage/thumbnails/test.jpg',
+        assetId: 'asset_123',
         duration: Duration(seconds: 120),
         size: 1024000,
         dateModified: dateTime,
@@ -135,6 +146,7 @@ void main() {
       expect(restoredVideo.name, originalVideo.name);
       expect(restoredVideo.path, originalVideo.path);
       expect(restoredVideo.thumbnail, originalVideo.thumbnail);
+      expect(restoredVideo.assetId, originalVideo.assetId);
       expect(restoredVideo.duration, originalVideo.duration);
       expect(restoredVideo.size, originalVideo.size);
       expect(restoredVideo.dateModified, originalVideo.dateModified);
