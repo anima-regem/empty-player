@@ -15,6 +15,12 @@ class ThumbnailService {
   static const int thumbnailWidth = 200;
   static const int thumbnailHeight = 150;
 
+  // Default thumbnail quality (0-100)
+  static const int _defaultThumbnailQuality = 80;
+
+  // Maximum number of thumbnails to load concurrently
+  static const int _maxConcurrentThumbnailLoads = 5;
+
   /// Gets the thumbnail for a video asset.
   /// Returns cached thumbnail if available, otherwise fetches from system.
   /// This method is non-blocking and will return null if thumbnail is not
@@ -52,7 +58,7 @@ class ThumbnailService {
       // Get the thumbnail using system's native thumbnail generation
       final thumbnailData = await asset.thumbnailDataWithSize(
         const ThumbnailSize(thumbnailWidth, thumbnailHeight),
-        quality: 80,
+        quality: _defaultThumbnailQuality,
       );
 
       if (thumbnailData != null) {
@@ -79,9 +85,8 @@ class ThumbnailService {
     ).toList();
 
     // Load thumbnails in parallel with concurrency limit
-    const batchSize = 5;
-    for (var i = 0; i < toLoad.length; i += batchSize) {
-      final batch = toLoad.skip(i).take(batchSize);
+    for (var i = 0; i < toLoad.length; i += _maxConcurrentThumbnailLoads) {
+      final batch = toLoad.skip(i).take(_maxConcurrentThumbnailLoads);
       await Future.wait(batch.map((id) => loadThumbnail(id)));
     }
   }
