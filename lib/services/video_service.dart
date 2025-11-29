@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:empty_player/models/video_item.dart';
+import 'package:empty_player/services/thumbnail_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -171,6 +172,8 @@ class VideoService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_cacheKey);
       await prefs.remove(_cacheTimestampKey);
+      // Also clear thumbnail cache
+      ThumbnailService.clearCache();
       debugPrint('Video cache cleared');
     } catch (e) {
       debugPrint('Error clearing cache: $e');
@@ -224,6 +227,7 @@ class VideoService {
                 name: asset.title ?? path.basename(file.path),
                 path: file.path,
                 thumbnail: null,
+                assetId: asset.id,
                 duration: Duration(seconds: asset.duration),
                 size: await file.length(),
                 dateModified: asset.modifiedDateTime,
