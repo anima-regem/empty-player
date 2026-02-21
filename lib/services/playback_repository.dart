@@ -17,6 +17,14 @@ abstract interface class PlaybackRepository {
   Future<void> setFavorite(String mediaId, bool isFavorite);
 }
 
+PlaybackRepository _activePlaybackRepository = SharedPrefsPlaybackRepository();
+
+PlaybackRepository playbackRepository() => _activePlaybackRepository;
+
+void configurePlaybackRepository(PlaybackRepository repository) {
+  _activePlaybackRepository = repository;
+}
+
 class SharedPrefsPlaybackRepository implements PlaybackRepository {
   static const _statesKey = 'playback_states_v1';
   static const _lastPlayedKey = 'playback_last_played_v1';

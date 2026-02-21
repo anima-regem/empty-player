@@ -40,8 +40,40 @@ enum _HeaderMenuAction { about, refresh, stream }
 
 enum _FolderMenuAction { open, pinToggle }
 
+typedef EmbeddingRuntimeResolver =
+    Future<EmbeddingRuntime> Function({EmbeddingRuntimeMode mode});
+
+typedef SemanticSearchServiceBuilder =
+    VideoSemanticSearchService Function({
+      required EmbeddingRuntime runtime,
+      required VectorIndexRepository indexRepository,
+    });
+
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final LibraryRepository? libraryRepository;
+  final PermissionGateway? permissionGateway;
+  final LibraryPreferencesService? libraryPreferences;
+  final PlaybackRepository? playbackRepository;
+  final AppSettingsService? settingsService;
+  final MiniPlayerService? miniPlayerService;
+  final VectorIndexRepository? vectorIndexRepository;
+  final EmbeddingRuntime? initialEmbeddingRuntime;
+  final EmbeddingRuntimeResolver? embeddingRuntimeResolver;
+  final SemanticSearchServiceBuilder? semanticSearchServiceBuilder;
+
+  const HomePage({
+    super.key,
+    this.libraryRepository,
+    this.permissionGateway,
+    this.libraryPreferences,
+    this.playbackRepository,
+    this.settingsService,
+    this.miniPlayerService,
+    this.vectorIndexRepository,
+    this.initialEmbeddingRuntime,
+    this.embeddingRuntimeResolver,
+    this.semanticSearchServiceBuilder,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -50,22 +82,18 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final DeviceLibraryRepository _libraryRepository =
-      const DeviceLibraryRepository();
-  final LibraryPreferencesService _libraryPreferences =
-      LibraryPreferencesService();
-  final PlaybackRepository _playbackRepository =
-      SharedPrefsPlaybackRepository();
-  final AppSettingsService _settings = AppSettingsService();
-  final MiniPlayerService _miniPlayerService = MiniPlayerService();
+  late final LibraryRepository _libraryRepository;
+  late final PermissionGateway _permissionGateway;
+  late final LibraryPreferencesService _libraryPreferences;
+  late final PlaybackRepository _playbackRepository;
+  late final AppSettingsService _settings;
+  late final MiniPlayerService _miniPlayerService;
+  late final VectorIndexRepository _vectorIndexRepository;
+  late final EmbeddingRuntimeResolver _embeddingRuntimeResolver;
+  late final SemanticSearchServiceBuilder _semanticSearchServiceBuilder;
   final EmbeddingIndexStatusService _embeddingIndexStatus =
       EmbeddingIndexStatusService.instance;
-  EmbeddingRuntime _embeddingRuntime = const DeterministicSpikeEmbeddingRuntime(
-    runtimeName: 'deterministic_fallback',
-    dimensions: 128,
-  );
-  final VectorIndexRepository _vectorIndexRepository =
-      createDefaultVectorIndexRepository();
+  late EmbeddingRuntime _embeddingRuntime;
   final TextEditingController _searchController = TextEditingController();
 
   late VideoSemanticSearchService _semanticSearchService;
@@ -98,9 +126,41 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
+    final defaultLibraryRepository = const DeviceLibraryRepository();
+    _libraryRepository = widget.libraryRepository ?? defaultLibraryRepository;
+    _permissionGateway =
+        widget.permissionGateway ??
+        (_libraryRepository is PermissionGateway
+            ? _libraryRepository as PermissionGateway
+            : defaultLibraryRepository);
+    _libraryPreferences =
+        widget.libraryPreferences ?? LibraryPreferencesService();
+    _playbackRepository = widget.playbackRepository ?? playbackRepository();
+    _settings = widget.settingsService ?? AppSettingsService();
+    _miniPlayerService = widget.miniPlayerService ?? MiniPlayerService();
+    _vectorIndexRepository =
+        widget.vectorIndexRepository ?? createDefaultVectorIndexRepository();
+    _embeddingRuntime =
+        widget.initialEmbeddingRuntime ??
+        const DeterministicSpikeEmbeddingRuntime(
+          runtimeName: 'deterministic_fallback',
+          dimensions: 128,
+        );
+    _embeddingRuntimeResolver =
+        widget.embeddingRuntimeResolver ?? createEmbeddingRuntime;
+    _semanticSearchServiceBuilder =
+        widget.semanticSearchServiceBuilder ??
+        ({
+          required EmbeddingRuntime runtime,
+          required VectorIndexRepository indexRepository,
+        }) => VideoSemanticSearchService(
+          runtime: runtime,
+          indexRepository: indexRepository,
+        );
+
     _tabController = TabController(length: 2, vsync: this);
     unawaited(_embeddingIndexStatus.ensureInitialized());
-    _semanticSearchService = VideoSemanticSearchService(
+    _semanticSearchService = _semanticSearchServiceBuilder(
       runtime: _embeddingRuntime,
       indexRepository: _vectorIndexRepository,
     );
@@ -145,7 +205,7 @@ class _HomePageState extends State<HomePage>
     final mode = EmbeddingRuntimeMode.fromStorageValue(
       _settings.embeddingRuntimeMode,
     );
-    final resolvedRuntime = await createEmbeddingRuntime(mode: mode);
+    final resolvedRuntime = await _embeddingRuntimeResolver(mode: mode);
     final runtimeAvailable = resolvedRuntime is! UnavailableEmbeddingRuntime;
     final unavailableReason = resolvedRuntime is UnavailableEmbeddingRuntime
         ? resolvedRuntime.reason
@@ -164,7 +224,7 @@ class _HomePageState extends State<HomePage>
       _semanticError = runtimeAvailable ? null : unavailableReason;
       _semanticRankedVideoIds = const [];
       _semanticScoreById = const {};
-      _semanticSearchService = VideoSemanticSearchService(
+      _semanticSearchService = _semanticSearchServiceBuilder(
         runtime: _embeddingRuntime,
         indexRepository: _vectorIndexRepository,
       );
@@ -492,9 +552,9 @@ class _HomePageState extends State<HomePage>
     });
 
     try {
-      final hasPermission = await _libraryRepository.hasLibraryPermission();
+      final hasPermission = await _permissionGateway.hasLibraryPermission();
       if (!hasPermission) {
-        final status = await _libraryRepository.requestLibraryPermission();
+        final status = await _permissionGateway.requestLibraryPermission();
         if (!status.isGranted) {
           if (mounted) {
             setState(() {

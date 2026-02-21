@@ -84,8 +84,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   // Global settings service
   final AppSettingsService _appSettings = AppSettingsService();
   final MiniPlayerService _miniPlayerService = MiniPlayerService();
-  final PlaybackRepository _playbackRepository =
-      SharedPrefsPlaybackRepository();
+  final PlaybackRepository _playbackRepository = playbackRepository();
   final PlayerEngine _playerEngine = const MediaKitPlayerEngine();
   DateTime _lastStateSavedAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _lastSavedPositionMs = 0;

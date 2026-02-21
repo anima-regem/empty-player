@@ -1,12 +1,22 @@
+import 'dart:async';
+
 import 'package:empty_player/pages/home_page.dart';
 import 'package:empty_player/pages/video_player.dart';
 import 'package:empty_player/models/media_source.dart';
+import 'package:empty_player/services/playback_transport_service.dart';
 import 'package:empty_player/ui/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class VideoFrame extends StatefulWidget {
-  const VideoFrame({super.key});
+  final Widget homePage;
+  final Widget Function(MediaSource source, String title)? playerPageBuilder;
+
+  const VideoFrame({
+    super.key,
+    this.homePage = const HomePage(),
+    this.playerPageBuilder,
+  });
 
   @override
   State<VideoFrame> createState() => _VideoFrameState();
@@ -23,6 +33,7 @@ class _VideoFrameState extends State<VideoFrame> {
   void initState() {
     super.initState();
     _setupIntentListener();
+    unawaited(PlaybackTransportService.instance.start());
   }
 
   void _setupIntentListener() {
@@ -48,12 +59,20 @@ class _VideoFrameState extends State<VideoFrame> {
       final source = MediaSource.fromInput(uri);
       _navKey.currentState?.push(
         MaterialPageRoute(
-          builder: (_) => VideoApp(source: source, title: lastSegment),
+          builder: (_) =>
+              widget.playerPageBuilder?.call(source, lastSegment) ??
+              VideoApp(source: source, title: lastSegment),
         ),
       );
     } on FormatException {
       // Ignore unsupported intent URIs.
     }
+  }
+
+  @override
+  void dispose() {
+    unawaited(PlaybackTransportService.instance.stop());
+    super.dispose();
   }
 
   @override
@@ -63,7 +82,7 @@ class _VideoFrameState extends State<VideoFrame> {
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       title: 'Empty Player',
-      home: const HomePage(),
+      home: widget.homePage,
     );
   }
 }

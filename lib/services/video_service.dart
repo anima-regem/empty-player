@@ -15,7 +15,7 @@ class VideoService {
   static const String _cacheProbeCountKey = 'video_cache_probe_count_v1';
   static const String _cacheProbeSignatureKey =
       'video_cache_probe_signature_v1';
-  static const int _currentCacheSchemaVersion = 3;
+  static const int _currentCacheSchemaVersion = 4;
   static const Duration _cacheExpiry = Duration(hours: 24);
   static const int _scanPageSize = 300;
 
@@ -62,11 +62,25 @@ class VideoService {
     '.m2ts': 'video/mp2t',
   };
 
-  /// Check if a file path has a valid video extension.
-  /// Returns false if the file path is null or empty.
-  static bool _isValidVideoFile(String filePath) {
-    if (filePath.isEmpty) return false;
-    final extension = path.extension(filePath).toLowerCase();
+  /// Determine whether a source should be treated as a video asset.
+  /// Prefer MIME when available, otherwise fall back to extension checks.
+  static bool _isLikelyVideoAsset({
+    required String source,
+    String? mimeType,
+  }) {
+    if (source.isEmpty) return false;
+
+    final normalizedMime = mimeType?.trim().toLowerCase();
+    if (normalizedMime != null && normalizedMime.startsWith('video/')) {
+      return true;
+    }
+
+    if (source.startsWith('content://')) {
+      // For MediaStore content URIs, trust the RequestType.video query.
+      return true;
+    }
+
+    final extension = path.extension(source).toLowerCase();
     return _validVideoExtensions.contains(extension);
   }
 
@@ -256,6 +270,8 @@ class VideoService {
       final seenAssetIds = <String>{};
       final seenPaths = <String>{};
       int processedCount = 0;
+      int skippedNoReadableSource = 0;
+      int skippedNotVideo = 0;
 
       for (final album in albums) {
         var page = 0;
@@ -277,16 +293,27 @@ class VideoService {
             }
 
             try {
+              final mimeType = asset.mimeType?.trim();
               final file = await asset.file;
-              if (file == null) continue;
-              final normalizedPath = file.path.trim();
+              String normalizedPath = file?.path.trim() ?? '';
+              if (normalizedPath.isEmpty) {
+                final mediaUrl = await asset.getMediaUrl();
+                normalizedPath = mediaUrl?.trim() ?? '';
+              }
+              if (normalizedPath.isEmpty) {
+                skippedNoReadableSource += 1;
+                continue;
+              }
               if (normalizedPath.isEmpty) continue;
               if (!seenPaths.add(normalizedPath)) {
                 continue;
               }
 
-              // Filter out non-video files (e.g., JPEG, PNG)
-              if (!_isValidVideoFile(normalizedPath)) {
+              if (!_isLikelyVideoAsset(
+                source: normalizedPath,
+                mimeType: mimeType,
+              )) {
+                skippedNotVideo += 1;
                 continue;
               }
 
@@ -296,9 +323,9 @@ class VideoService {
                   name: asset.title ?? path.basename(normalizedPath),
                   path: normalizedPath,
                   thumbnail: asset.id,
-                  mimeType: _inferMimeType(normalizedPath),
+                  mimeType: mimeType ?? _inferMimeType(normalizedPath),
                   duration: Duration(seconds: asset.duration),
-                  size: await file.length(),
+                  size: file == null ? null : await file.length(),
                   dateModified: asset.modifiedDateTime,
                 ),
               );
@@ -318,7 +345,12 @@ class VideoService {
       // Save to cache
       if (allVideos.isNotEmpty) {
         await _saveCache(allVideos, probe: probe);
-        debugPrint('Completed: ${allVideos.length} videos scanned');
+        debugPrint(
+          'Completed: ${allVideos.length} videos scanned '
+          '(processed=$processedCount, '
+          'missingSource=$skippedNoReadableSource, '
+          'filteredNonVideo=$skippedNotVideo)',
+        );
       } else {
         debugPrint('No videos found');
       }

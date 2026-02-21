@@ -8,3 +8,4 @@ export 'settings/settings_v2.dart';
 export 'storage/app_database_v2.dart';
 export 'storage/index_job_scheduler_v2.dart';
 export 'storage/legacy_migration_v2.dart';
+export 'storage/playback_repository_v2.dart';
