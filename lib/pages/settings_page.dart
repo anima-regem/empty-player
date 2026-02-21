@@ -253,14 +253,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 ListTile(
                   title: Text('Audio Tracks', style: GoogleFonts.lato()),
                   subtitle: Text(
-                    'Multiple audio tracks not supported with current player.',
+                    'Depends on source/player capability; unavailable options stay hidden in playback UI.',
                     style: GoogleFonts.lato(fontSize: 12),
                   ),
                 ),
                 ListTile(
                   title: Text('Subtitles', style: GoogleFonts.lato()),
                   subtitle: Text(
-                    'Subtitle loading & calibration UI lives in video page.',
+                    'Subtitle loading and offset calibration are available in the video player settings.',
                     style: GoogleFonts.lato(fontSize: 12),
                   ),
                 ),
@@ -268,7 +268,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    'Some features are placeholders pending enhanced player integration.',
+                    'Runtime status and indexing progress above reflect the current on-device search engine state.',
                     style: GoogleFonts.lato(
                       fontSize: 12,
                       color: AppThemeTokens.textSecondary,
@@ -442,9 +442,9 @@ class _SettingsPageState extends State<SettingsPage> {
   String _embeddingRuntimeDescription(EmbeddingRuntimeMode mode) {
     switch (mode) {
       case EmbeddingRuntimeMode.auto:
-        return 'Prefer Android on-device runtime, fall back automatically.';
+        return 'Prefer Android on-device runtime; semantic features are disabled if unavailable.';
       case EmbeddingRuntimeMode.androidNative:
-        return 'Require Android runtime when available (best visual relevance).';
+        return 'Require Android runtime (semantic features unavailable if runtime is missing).';
       case EmbeddingRuntimeMode.deterministic:
         return 'Deterministic fallback for testing and predictable output.';
     }

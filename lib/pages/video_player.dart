@@ -92,12 +92,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   bool _hasRestoredStartPosition = false;
   bool _controllerDisposedExternally = false;
   bool _sessionPlayCountRecorded = false;
+  bool _settingsLoaded = false;
+  bool _controllerAssigned = false;
   Duration _lastUiPosition = Duration.zero;
 
   // Extended media settings
-  final List<String> _audioTracks = ['Track 1'];
-  int _selectedAudioTrack = 0;
-  double _audioDelayMs = 0.0; // milliseconds
   bool _subtitlesEnabled = false;
   double _subtitleOffsetSeconds = 0.0; // calibration offset
   final SubtitleService _subtitleService = const SubtitleService();
@@ -120,17 +119,18 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         existingController.value.isInitialized) {
       // Reuse existing controller from mini player
       _controller = existingController;
+      _controllerAssigned = true;
       _controller.addListener(_onVideoStateChanged);
       setState(() {
         final size = _controller.value.size;
         _videoResolution = '${size.width.toInt()} x ${size.height.toInt()}';
         _videoDuration = _formatDuration(_controller.value.duration);
         _currentVolume = _controller.value.volume;
-        _controller.setPlaybackSpeed(_playbackSpeed);
         _activeSubtitleText = _resolveCurrentSubtitle(
           _controller.value.position,
         );
       });
+      unawaited(_applyPlaybackPreferencesIfReady());
     } else {
       // Create new controller
       _createController();
@@ -158,6 +158,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         _source,
         autoPlay: widget.start?.autoPlay ?? true,
       );
+      _controllerAssigned = true;
       _controller.addListener(_onVideoStateChanged);
       await _controller.initialize();
 
@@ -167,11 +168,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         _videoResolution = '${size.width.toInt()} x ${size.height.toInt()}';
         _videoDuration = _formatDuration(_controller.value.duration);
         _currentVolume = _controller.value.volume;
-        _controller.setPlaybackSpeed(_playbackSpeed);
         _activeSubtitleText = _resolveCurrentSubtitle(
           _controller.value.position,
         );
       });
+      await _applyPlaybackPreferencesIfReady();
 
       await _restorePlaybackPositionIfAvailable();
 
@@ -222,11 +223,29 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
 
   Future<void> _initializeSettings() async {
     await _appSettings.init();
+    final defaultSpeed = _appSettings.defaultPlaybackSpeed.clamp(0.25, 4.0);
     setState(() {
-      _playbackSpeed = _appSettings.defaultPlaybackSpeed;
+      _playbackSpeed = defaultSpeed.toDouble();
       _subtitleOffsetSeconds = _appSettings.subtitleOffsetSeconds;
       _subtitlesEnabled = _appSettings.subtitlesEnabled;
+      _settingsLoaded = true;
     });
+    await _applyPlaybackPreferencesIfReady();
+  }
+
+  bool get _hasReadyController =>
+      _controllerAssigned && _controller.value.isInitialized;
+
+  Future<void> _applyPlaybackPreferencesIfReady() async {
+    if (!_settingsLoaded || !_hasReadyController) return;
+    final speed = _playbackSpeed.clamp(0.25, 4.0).toDouble();
+    await _controller.setPlaybackSpeed(speed);
+    if (!mounted) return;
+    if ((_playbackSpeed - speed).abs() > 1e-9) {
+      setState(() {
+        _playbackSpeed = speed;
+      });
+    }
   }
 
   Future<dynamic> _handlePlatformMethod(MethodCall call) async {
@@ -493,6 +512,14 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     }
     _maybePersistPlaybackState();
     _resetHideTimer();
+  }
+
+  int _defaultSeekSeconds() {
+    final totalMinutes = _controller.value.duration.inMinutes;
+    if (totalMinutes >= 60) {
+      return 20;
+    }
+    return 10;
   }
 
   void _handleVerticalDrag(double delta) {
@@ -795,13 +822,14 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
           onDoubleTapDown: (details) {
             final screenWidth = MediaQuery.of(context).size.width;
             final tapPosition = details.globalPosition.dx;
+            final skipSeconds = _defaultSeekSeconds();
 
             if (tapPosition < screenWidth / 3) {
-              _seekRelative(-10);
-              _showSeekFeedback(-10);
+              _seekRelative(-skipSeconds);
+              _showSeekFeedback(-skipSeconds);
             } else if (tapPosition > screenWidth * 2 / 3) {
-              _seekRelative(10);
-              _showSeekFeedback(10);
+              _seekRelative(skipSeconds);
+              _showSeekFeedback(skipSeconds);
             }
           },
           child: Stack(
@@ -1162,9 +1190,19 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     final compact = metrics.isCompact;
     final position = _controller.value.position;
     final duration = _controller.value.duration;
+    final durationMs = duration.inMilliseconds;
+    final hasSeekableDuration = durationMs > 0;
+    final clampedPositionMs = hasSeekableDuration
+        ? position.inMilliseconds.clamp(0, durationMs)
+        : 0;
+    final sliderMax = hasSeekableDuration ? durationMs.toDouble() : 1.0;
+    final sliderValue = clampedPositionMs.toDouble();
     final buffered = _controller.value.buffered.isNotEmpty
         ? _controller.value.buffered.last.end
         : Duration.zero;
+    final bufferedMs = hasSeekableDuration
+        ? buffered.inMilliseconds.clamp(0, durationMs)
+        : 0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1192,17 +1230,19 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                   child: Material(
                     color: Colors.transparent,
                     child: Slider(
-                      value: position.inMilliseconds.toDouble(),
-                      max: duration.inMilliseconds.toDouble(),
+                      value: sliderValue,
+                      max: sliderMax,
                       activeColor: Colors.red,
                       inactiveColor: Colors.grey.withValues(alpha: 0.5),
-                      secondaryTrackValue: buffered.inMilliseconds.toDouble(),
+                      secondaryTrackValue: bufferedMs.toDouble(),
                       secondaryActiveColor: Colors.white.withValues(alpha: 0.3),
-                      onChanged: (value) {
-                        _controller.seekTo(
-                          Duration(milliseconds: value.toInt()),
-                        );
-                      },
+                      onChanged: hasSeekableDuration
+                          ? (value) {
+                              _controller.seekTo(
+                                Duration(milliseconds: value.toInt()),
+                              );
+                            }
+                          : null,
                       onChangeStart: (_) {
                         _hideTimer?.cancel();
                       },
@@ -1214,7 +1254,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 ),
               ),
               Text(
-                _formatDuration(duration),
+                hasSeekableDuration ? _formatDuration(duration) : '--:--',
                 style: GoogleFonts.lato(color: Colors.white, fontSize: 12),
               ),
             ],
@@ -1247,13 +1287,14 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                           icon: const Icon(Icons.replay_10_rounded),
                           color: Colors.white,
                           iconSize: metrics.controlIconSize,
-                          onPressed: () => _seekRelative(-10),
+                          onPressed: () =>
+                              _seekRelative(-_defaultSeekSeconds()),
                         ),
                         IconButton(
                           icon: const Icon(Icons.forward_10_rounded),
                           color: Colors.white,
                           iconSize: metrics.controlIconSize,
-                          onPressed: () => _seekRelative(10),
+                          onPressed: () => _seekRelative(_defaultSeekSeconds()),
                         ),
                         _buildRoundActionButton(
                           icon: Icons.settings_rounded,
@@ -1307,13 +1348,14 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                           icon: const Icon(Icons.replay_10_rounded),
                           color: Colors.white,
                           iconSize: 32,
-                          onPressed: () => _seekRelative(-10),
+                          onPressed: () =>
+                              _seekRelative(-_defaultSeekSeconds()),
                         ),
                         IconButton(
                           icon: const Icon(Icons.forward_10_rounded),
                           color: Colors.white,
                           iconSize: 32,
-                          onPressed: () => _seekRelative(10),
+                          onPressed: () => _seekRelative(_defaultSeekSeconds()),
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -1374,6 +1416,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   }
 
   void _showSeekFeedback(int seconds) {
+    unawaited(HapticFeedback.selectionClick());
     final overlay = Overlay.of(context);
     final overlayEntry = OverlayEntry(
       builder: (context) => IgnorePointer(
@@ -1507,51 +1550,24 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                     _showSpeedDialog();
                   },
                 ),
-                // Audio Track option (placeholder)
                 ListTile(
                   leading: const Icon(
                     Icons.audiotrack_rounded,
-                    color: Colors.white,
+                    color: Colors.white70,
                   ),
                   title: Text(
-                    'Audio Track',
-                    style: GoogleFonts.lato(color: Colors.white),
+                    'Audio Controls',
+                    style: GoogleFonts.lato(color: Colors.white70),
                   ),
                   subtitle: Text(
-                    _audioTracks[_selectedAudioTrack],
+                    'Track selection and audio delay are unavailable with the current playback engine.',
                     style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
                   ),
                   trailing: const Icon(
-                    Icons.chevron_right_rounded,
+                    Icons.lock_outline_rounded,
                     color: Colors.grey,
                   ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showAudioTrackDialog();
-                  },
-                ),
-                // Audio Delay option
-                ListTile(
-                  leading: const Icon(
-                    Icons.timer_outlined,
-                    color: Colors.white,
-                  ),
-                  title: Text(
-                    'Audio Delay',
-                    style: GoogleFonts.lato(color: Colors.white),
-                  ),
-                  subtitle: Text(
-                    '${_audioDelayMs.toStringAsFixed(0)} ms',
-                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
-                  ),
-                  trailing: const Icon(
-                    Icons.chevron_right_rounded,
-                    color: Colors.grey,
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showAudioDelayDialog();
-                  },
+                  enabled: false,
                 ),
                 // Subtitles toggle
                 SwitchListTile(
@@ -1913,218 +1929,6 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
           overflow: TextOverflow.ellipsis,
         ),
       ],
-    );
-  }
-
-  void _showAudioTrackDialog() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _buildResponsiveSheet(
-        context: context,
-        child: Container(
-          decoration: const BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showSettingsDialog();
-                      },
-                      child: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(
-                      'Audio Track',
-                      style: GoogleFonts.lato(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(color: Colors.grey),
-              ..._audioTracks.asMap().entries.map((e) {
-                final idx = e.key;
-                final name = e.value;
-                final selected = idx == _selectedAudioTrack;
-                return ListTile(
-                  title: Text(
-                    name,
-                    style: GoogleFonts.lato(
-                      color: selected ? Colors.red : Colors.white,
-                      fontWeight: selected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
-                  ),
-                  trailing: selected
-                      ? const Icon(
-                          Icons.check_circle_rounded,
-                          color: Colors.red,
-                        )
-                      : null,
-                  onTap: () {
-                    setState(() => _selectedAudioTrack = idx);
-                    Navigator.pop(context);
-                    _showSettingsDialog();
-                  },
-                );
-              }),
-              const SizedBox(height: 12),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showAudioDelayDialog() {
-    double tempDelay = _audioDelayMs;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => _buildResponsiveSheet(
-          context: context,
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.black87,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showSettingsDialog();
-                        },
-                        child: const Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        'Audio Delay',
-                        style: GoogleFonts.lato(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(color: Colors.grey),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Delay (ms)',
-                        style: GoogleFonts.lato(
-                          color: Colors.grey,
-                          fontSize: 12,
-                        ),
-                      ),
-                      Slider(
-                        value: tempDelay,
-                        min: -1000,
-                        max: 1000,
-                        divisions: 40,
-                        label: '${tempDelay.round()} ms',
-                        onChanged: (v) => setModalState(() => tempDelay = v),
-                      ),
-                      Text(
-                        '${tempDelay.round()} ms',
-                        style: GoogleFonts.lato(
-                          color: Colors.white,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _showSettingsDialog();
-                            },
-                            child: Text('Cancel', style: GoogleFonts.lato()),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              setState(() => _audioDelayMs = tempDelay);
-                              Navigator.pop(context);
-                              _showSettingsDialog();
-                            },
-                            child: Text(
-                              'Save',
-                              style: GoogleFonts.lato(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 

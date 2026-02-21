@@ -183,6 +183,37 @@ class AndroidOnDeviceEmbeddingRuntime implements EmbeddingRuntime {
   }
 }
 
+class UnavailableEmbeddingRuntime implements EmbeddingRuntime {
+  @override
+  final String runtimeName;
+
+  @override
+  final int dimensions;
+
+  final String reason;
+
+  const UnavailableEmbeddingRuntime({
+    required this.reason,
+    this.runtimeName = 'embedding_unavailable',
+    this.dimensions = 128,
+  });
+
+  @override
+  Future<List<double>> embedText(String query) {
+    throw UnsupportedError(reason);
+  }
+
+  @override
+  Future<List<double>> embedFrame(VideoFrameInput frame) {
+    throw UnsupportedError(reason);
+  }
+
+  @override
+  Future<List<double>> embedImage(ImageEmbeddingInput image) {
+    throw UnsupportedError(reason);
+  }
+}
+
 EmbeddingRuntime createDefaultEmbeddingRuntime() {
   if (Platform.isAndroid) {
     return const AndroidOnDeviceEmbeddingRuntime();
@@ -214,11 +245,11 @@ Future<EmbeddingRuntime> createEmbeddingRuntime({
       return androidRuntime;
     }
   } catch (_) {
-    // If native runtime is unavailable, fall back to deterministic runtime.
+    // If native runtime is unavailable, expose degraded mode explicitly.
   }
 
-  if (mode == EmbeddingRuntimeMode.androidNative) {
-    return fallback;
-  }
-  return fallback;
+  return const UnavailableEmbeddingRuntime(
+    reason:
+        'On-device embedding runtime is unavailable. Install a compatible Android build or switch to deterministic mode in Settings.',
+  );
 }

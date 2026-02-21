@@ -77,11 +77,13 @@ class _HomePageState extends State<HomePage>
   bool _semanticReady = false;
   bool _semanticIndexing = false;
   String? _semanticError;
+  bool _semanticRuntimeAvailable = true;
   bool _imageSearchActive = false;
   String? _imageSearchPath;
   int _lastHandledEmbeddingCommandVersion = 0;
   final Map<String, Future<Uint8List?>> _thumbnailFutures =
       <String, Future<Uint8List?>>{};
+  final Set<String> _temporaryImageSearchFiles = <String>{};
 
   List<VideoFolder> _folders = [];
   List<VideoItem> _allVideos = [];
@@ -144,16 +146,22 @@ class _HomePageState extends State<HomePage>
       _settings.embeddingRuntimeMode,
     );
     final resolvedRuntime = await createEmbeddingRuntime(mode: mode);
+    final runtimeAvailable = resolvedRuntime is! UnavailableEmbeddingRuntime;
+    final unavailableReason = resolvedRuntime is UnavailableEmbeddingRuntime
+        ? resolvedRuntime.reason
+        : null;
     if (!mounted) return;
     if (resolvedRuntime.runtimeName == _embeddingRuntime.runtimeName &&
-        resolvedRuntime.dimensions == _embeddingRuntime.dimensions) {
+        resolvedRuntime.dimensions == _embeddingRuntime.dimensions &&
+        runtimeAvailable == _semanticRuntimeAvailable) {
       return;
     }
 
     setState(() {
       _embeddingRuntime = resolvedRuntime;
+      _semanticRuntimeAvailable = runtimeAvailable;
       _semanticReady = false;
-      _semanticError = null;
+      _semanticError = runtimeAvailable ? null : unavailableReason;
       _semanticRankedVideoIds = const [];
       _semanticScoreById = const {};
       _semanticSearchService = VideoSemanticSearchService(
@@ -161,7 +169,9 @@ class _HomePageState extends State<HomePage>
         indexRepository: _vectorIndexRepository,
       );
     });
-    _triggerSemanticIndexing();
+    if (runtimeAvailable) {
+      _triggerSemanticIndexing();
+    }
   }
 
   void _handleEmbeddingCommand() {
@@ -177,6 +187,16 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _runSemanticIndexing({required bool forceRebuild}) async {
+    if (!_semanticRuntimeAvailable) {
+      if (mounted) {
+        setState(() {
+          _semanticReady = false;
+          _semanticError =
+              'On-device embedding runtime is unavailable on this device.';
+        });
+      }
+      return;
+    }
     if (_allVideos.isEmpty) return;
     final targetVideos = _allVideos
         .where((video) => video.path.trim().isNotEmpty)
@@ -228,6 +248,7 @@ class _HomePageState extends State<HomePage>
   }
 
   void _triggerSemanticIndexing() {
+    if (!_semanticRuntimeAvailable) return;
     _indexingScheduler?.scheduleIncremental();
   }
 
@@ -241,9 +262,21 @@ class _HomePageState extends State<HomePage>
         setState(() {
           _semanticRankedVideoIds = const [];
           _semanticScoreById = const {};
-          _semanticError = null;
+          _semanticError = _semanticRuntimeAvailable
+              ? null
+              : 'On-device embedding runtime is unavailable on this device.';
         });
       }
+      return;
+    }
+
+    if (!_semanticRuntimeAvailable) {
+      setState(() {
+        _semanticRankedVideoIds = const [];
+        _semanticScoreById = const {};
+        _semanticError =
+            'On-device embedding runtime is unavailable on this device.';
+      });
       return;
     }
 
@@ -294,6 +327,17 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _startImageSearch() async {
+    if (!_semanticRuntimeAvailable) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Visual search is unavailable: on-device embedding runtime is not ready.',
+          ),
+        ),
+      );
+      return;
+    }
     if (_semanticIndexing || !_semanticReady) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -309,7 +353,7 @@ class _HomePageState extends State<HomePage>
     final selection = await FilePicker.platform.pickFiles(
       type: FileType.image,
       allowMultiple: false,
-      withData: true,
+      withData: false,
     );
     if (!mounted || selection == null || selection.files.isEmpty) {
       return;
@@ -325,6 +369,7 @@ class _HomePageState extends State<HomePage>
       return;
     }
     if (!mounted) return;
+    _cleanupTempImagePath(_imageSearchPath);
 
     setState(() {
       _imageSearchActive = true;
@@ -376,19 +421,45 @@ class _HomePageState extends State<HomePage>
       '${tempDir.path}/visual_query_${DateTime.now().millisecondsSinceEpoch}.$extension',
     );
     await file.writeAsBytes(bytes, flush: true);
+    _temporaryImageSearchFiles.add(file.path);
     return file.path;
   }
 
   void _clearImageSearch() {
+    _cleanupTempImagePath(_imageSearchPath);
     setState(() {
       _imageSearchActive = false;
       _imageSearchPath = null;
       _semanticRankedVideoIds = const [];
       _semanticScoreById = const {};
-      _semanticError = null;
+      _semanticError = _semanticRuntimeAvailable
+          ? null
+          : 'On-device embedding runtime is unavailable on this device.';
     });
     if (_searchQuery.trim().isNotEmpty) {
       _scheduleSemanticSearch(_searchQuery);
+    }
+  }
+
+  void _cleanupTempImagePath(String? imagePath) {
+    if (imagePath == null || imagePath.trim().isEmpty) return;
+    if (!_temporaryImageSearchFiles.remove(imagePath)) return;
+    unawaited(_deleteTemporaryImage(imagePath));
+  }
+
+  void _cleanupAllTemporaryImageFiles() {
+    final paths = _temporaryImageSearchFiles.toList(growable: false);
+    _temporaryImageSearchFiles.clear();
+    for (final path in paths) {
+      unawaited(_deleteTemporaryImage(path));
+    }
+  }
+
+  Future<void> _deleteTemporaryImage(String path) async {
+    try {
+      await File(path).delete();
+    } catch (_) {
+      // Ignore cleanup failures for temporary files.
     }
   }
 
@@ -531,7 +602,7 @@ class _HomePageState extends State<HomePage>
           .toList(growable: false);
     }
 
-    final lexical = _allVideos
+    final lexicalMatches = _allVideos
         .where((video) {
           if (query.isEmpty) return true;
           return video.name.toLowerCase().contains(query);
@@ -543,7 +614,16 @@ class _HomePageState extends State<HomePage>
       final minSemantic = semanticScores.reduce(math.min);
       final maxSemantic = semanticScores.reduce(math.max);
 
-      final ranked = lexical.toList(growable: false)
+      final candidatesById = <String, VideoItem>{
+        for (final video in lexicalMatches) video.id: video,
+      };
+      for (final video in _allVideos) {
+        if (_semanticScoreById.containsKey(video.id)) {
+          candidatesById[video.id] = video;
+        }
+      }
+
+      final ranked = candidatesById.values.toList(growable: false)
         ..sort((a, b) {
           final aScore = _hybridScore(
             video: a,
@@ -565,7 +645,7 @@ class _HomePageState extends State<HomePage>
       return ranked;
     }
 
-    final sorted = lexical.toList(growable: false)
+    final sorted = lexicalMatches.toList(growable: false)
       ..sort(_librarySortComparator);
     return sorted;
   }
@@ -583,8 +663,14 @@ class _HomePageState extends State<HomePage>
       minSemantic: minSemantic,
       maxSemantic: maxSemantic,
     );
-    final recencyBoost = video.lastPlayedAt == null ? 0.0 : 0.08;
-    return (0.56 * lexical) + (0.40 * semantic) + recencyBoost;
+    final completionAffinity = _completionAffinity(video);
+    final recency = _recencySignal(video);
+    final explicitPreference = _explicitPreferenceSignal(video);
+    return (0.40 * lexical) +
+        (0.35 * semantic) +
+        (0.10 * completionAffinity) +
+        (0.08 * recency) +
+        (0.07 * explicitPreference);
   }
 
   double _lexicalScore(String title, String query) {
@@ -616,6 +702,40 @@ class _HomePageState extends State<HomePage>
     final spread = maxSemantic - minSemantic;
     if (spread <= 1e-9) return 1;
     return ((semanticRaw - minSemantic) / spread).clamp(0, 1).toDouble();
+  }
+
+  double _completionAffinity(VideoItem video) {
+    final positionMs = video.lastPositionMs;
+    final durationMs = video.duration?.inMilliseconds;
+    if (positionMs == null || durationMs == null || durationMs <= 0) return 0;
+    final ratio = (positionMs / durationMs).clamp(0.0, 1.0);
+    if (ratio < 0.05) return 0;
+    if (ratio > 0.97) return 0.45;
+    // Prefer unfinished sessions that are likely to be resumed.
+    final unfinished = 1.0 - (ratio - 0.72).abs();
+    return unfinished.clamp(0.0, 1.0).toDouble();
+  }
+
+  double _recencySignal(VideoItem video) {
+    final lastPlayedAt = video.lastPlayedAt;
+    if (lastPlayedAt == null) return 0;
+    final ageHours = DateTime.now().difference(lastPlayedAt).inHours;
+    if (ageHours <= 0) return 1.0;
+    final ageDays = ageHours / 24.0;
+    // 7-day half-life style decay.
+    return (1.0 / (1.0 + (ageDays / 7.0))).clamp(0.0, 1.0).toDouble();
+  }
+
+  double _explicitPreferenceSignal(VideoItem video) {
+    var signal = 0.0;
+    if (_favoriteMediaIds.contains(video.id)) {
+      signal += 0.65;
+    }
+    if (video.playCount > 1) {
+      final rewatch = ((video.playCount - 1) / 6.0).clamp(0.0, 1.0).toDouble();
+      signal += 0.35 * rewatch;
+    }
+    return signal.clamp(0.0, 1.0).toDouble();
   }
 
   int _librarySortComparator(VideoItem a, VideoItem b) {
@@ -766,6 +886,7 @@ class _HomePageState extends State<HomePage>
     _indexingScheduler?.dispose();
     _embeddingIndexStatus.commands.removeListener(_handleEmbeddingCommand);
     _miniPlayerService.removeListener(_onMiniPlayerStateChanged);
+    _cleanupAllTemporaryImageFiles();
     _searchController.dispose();
     _tabController.dispose();
     super.dispose();
@@ -1056,12 +1177,15 @@ class _HomePageState extends State<HomePage>
               IconButton(
                 tooltip: 'Clear search',
                 onPressed: () {
+                  _cleanupTempImagePath(_imageSearchPath);
                   _searchController.clear();
                   setState(() {
                     _searchQuery = '';
                     _semanticRankedVideoIds = const [];
                     _semanticScoreById = const {};
-                    _semanticError = null;
+                    _semanticError = _semanticRuntimeAvailable
+                        ? null
+                        : 'On-device embedding runtime is unavailable on this device.';
                     _imageSearchActive = false;
                     _imageSearchPath = null;
                   });
@@ -1495,6 +1619,7 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildVideoCard(VideoItem video) {
+    final reasonChips = _resultReasonChips(video);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1585,6 +1710,36 @@ class _HomePageState extends State<HomePage>
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
+            if (reasonChips.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: reasonChips
+                    .map(
+                      (label) => Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppThemeTokens.surface,
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(color: AppThemeTokens.surfaceAlt),
+                        ),
+                        child: Text(
+                          label,
+                          style: GoogleFonts.lato(
+                            color: AppThemeTokens.textSecondary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ],
             if (video.size != null) ...[
               const SizedBox(height: 2),
               Text(
@@ -1612,6 +1767,26 @@ class _HomePageState extends State<HomePage>
         ),
       ),
     );
+  }
+
+  List<String> _resultReasonChips(VideoItem video) {
+    if (!_imageSearchActive && _searchQuery.trim().isEmpty) {
+      return const [];
+    }
+    final chips = <String>[];
+    if (_semanticScoreById.containsKey(video.id)) {
+      chips.add('Visual match');
+    }
+
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isNotEmpty && video.name.toLowerCase() == query) {
+      chips.add('Exact title');
+    }
+
+    if (_recencySignal(video) >= 0.58) {
+      chips.add('Watched recently');
+    }
+    return chips;
   }
 
   Widget _buildVideoThumbnail(VideoItem video) {

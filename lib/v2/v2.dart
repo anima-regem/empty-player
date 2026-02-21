@@ -1,0 +1,10 @@
+export 'analytics_local/playback_analytics_v2.dart';
+export 'app_shell/app_shell_v2.dart';
+export 'discovery/discovery_service_v2.dart';
+export 'library/library_scanner_v2.dart';
+export 'player_core/player_controller_v2.dart';
+export 'player_core/playback_session_service_v2.dart';
+export 'settings/settings_v2.dart';
+export 'storage/app_database_v2.dart';
+export 'storage/index_job_scheduler_v2.dart';
+export 'storage/legacy_migration_v2.dart';

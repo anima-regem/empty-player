@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:empty_player/models/playback_session.dart';
 import 'package:empty_player/services/mini_player_service.dart';
+import 'package:empty_player/services/playback_controller_adapter.dart';
 import 'package:empty_player/pages/video_player.dart';
 import 'package:empty_player/ui/app_theme_tokens.dart';
 
@@ -16,23 +17,48 @@ class _MiniPlayerState extends State<MiniPlayer> {
   static const _cardHeight = 72.0;
   static const _outerMargin = 8.0;
   final MiniPlayerService _miniPlayerService = MiniPlayerService();
+  PlaybackControllerAdapter? _attachedController;
 
   @override
   void initState() {
     super.initState();
     _miniPlayerService.addListener(_onPlayerStateChanged);
+    _syncControllerListener();
   }
 
   @override
   void dispose() {
     _miniPlayerService.removeListener(_onPlayerStateChanged);
+    _detachControllerListener();
     super.dispose();
   }
 
   void _onPlayerStateChanged() {
+    _syncControllerListener();
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _onControllerUpdated() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _syncControllerListener() {
+    final controller = _miniPlayerService.controller;
+    if (identical(controller, _attachedController)) {
+      return;
+    }
+    _detachControllerListener();
+    _attachedController = controller;
+    _attachedController?.addListener(_onControllerUpdated);
+  }
+
+  void _detachControllerListener() {
+    _attachedController?.removeListener(_onControllerUpdated);
+    _attachedController = null;
   }
 
   void _openFullPlayer() {
@@ -133,47 +159,30 @@ class _MiniPlayerState extends State<MiniPlayer> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    StreamBuilder(
-                      stream: Stream.periodic(
-                        const Duration(milliseconds: 500),
+                    Text(
+                      '${_formatDuration(controller.value.position)} / '
+                      '${_formatDuration(controller.value.duration)}',
+                      style: GoogleFonts.lato(
+                        color: AppThemeTokens.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
                       ),
-                      builder: (context, snapshot) {
-                        final position = controller.value.position;
-                        final duration = controller.value.duration;
-                        return Text(
-                          '${_formatDuration(position)} / ${_formatDuration(duration)}',
-                          style: GoogleFonts.lato(
-                            color: AppThemeTokens.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        );
-                      },
                     ),
                     const SizedBox(height: 4),
                     // Progress bar
-                    StreamBuilder(
-                      stream: Stream.periodic(
-                        const Duration(milliseconds: 500),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: controller.value.duration.inMilliseconds > 0
+                            ? controller.value.position.inMilliseconds /
+                                  controller.value.duration.inMilliseconds
+                            : 0.0,
+                        backgroundColor: AppThemeTokens.surface,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppThemeTokens.accent,
+                        ),
+                        minHeight: 3,
                       ),
-                      builder: (context, snapshot) {
-                        final position = controller.value.position;
-                        final duration = controller.value.duration;
-                        final progress = duration.inMilliseconds > 0
-                            ? position.inMilliseconds / duration.inMilliseconds
-                            : 0.0;
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(2),
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            backgroundColor: AppThemeTokens.surface,
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              AppThemeTokens.accent,
-                            ),
-                            minHeight: 3,
-                          ),
-                        );
-                      },
                     ),
                   ],
                 ),

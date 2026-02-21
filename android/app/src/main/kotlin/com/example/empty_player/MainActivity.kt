@@ -353,13 +353,31 @@ class MainActivity : FlutterActivity() {
     private fun handleIncomingIntent(incoming: Intent?) {
         if (incoming == null) return
         val action = incoming.action
-        if (action == Intent.ACTION_VIEW || action == Intent.ACTION_SEND) {
-            val dataUri: Uri? = incoming.data ?: incoming.clipData?.getItemAt(0)?.uri
+        if (action == Intent.ACTION_VIEW ||
+            action == Intent.ACTION_SEND ||
+            action == Intent.ACTION_SEND_MULTIPLE) {
+            val dataUri: Uri? = when (action) {
+                Intent.ACTION_SEND -> resolveSingleSendUri(incoming)
+                Intent.ACTION_SEND_MULTIPLE -> incoming.clipData?.getItemAt(0)?.uri
+                else -> incoming.data ?: incoming.clipData?.getItemAt(0)?.uri
+            }
             dataUri?.let { uri ->
                 // Notify Flutter side to open this video
                 intentChannel?.invokeMethod("openVideo", uri.toString())
             }
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun resolveSingleSendUri(intent: Intent): Uri? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                ?: intent.data
+                ?: intent.clipData?.getItemAt(0)?.uri
+        }
+        return (intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
+            ?: intent.data
+            ?: intent.clipData?.getItemAt(0)?.uri
     }
 
     override fun onNewIntent(intent: Intent) {

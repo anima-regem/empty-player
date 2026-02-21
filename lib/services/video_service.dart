@@ -12,8 +12,12 @@ class VideoService {
   static const String _cacheKey = 'video_cache';
   static const String _cacheTimestampKey = 'video_cache_timestamp';
   static const String _cacheSchemaVersionKey = 'video_cache_schema_version';
-  static const int _currentCacheSchemaVersion = 2;
+  static const String _cacheProbeCountKey = 'video_cache_probe_count_v1';
+  static const String _cacheProbeSignatureKey =
+      'video_cache_probe_signature_v1';
+  static const int _currentCacheSchemaVersion = 3;
   static const Duration _cacheExpiry = Duration(hours: 24);
+  static const int _scanPageSize = 300;
 
   // List of valid video file extensions
   static const List<String> _validVideoExtensions = [
@@ -152,7 +156,10 @@ class VideoService {
   }
 
   /// Save video cache to SharedPreferences
-  static Future<void> _saveCache(List<VideoItem> videos) async {
+  static Future<void> _saveCache(
+    List<VideoItem> videos, {
+    required _LibraryProbe probe,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = videos.map((v) => v.toJson()).toList();
@@ -162,21 +169,34 @@ class VideoService {
         DateTime.now().millisecondsSinceEpoch,
       );
       await prefs.setInt(_cacheSchemaVersionKey, _currentCacheSchemaVersion);
+      await prefs.setInt(_cacheProbeCountKey, probe.uniqueAssetCount);
+      await prefs.setInt(_cacheProbeSignatureKey, probe.signature);
     } catch (e) {
       debugPrint('Error saving cache: $e');
     }
   }
 
   /// Load video cache from SharedPreferences
-  static Future<List<VideoItem>?> _loadCache() async {
+  static Future<List<VideoItem>?> _loadCache({
+    required _LibraryProbe probe,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final timestamp = prefs.getInt(_cacheTimestampKey);
       final cacheVersion =
           prefs.getInt(_cacheSchemaVersionKey) ?? _currentCacheSchemaVersion;
+      final cachedProbeCount = prefs.getInt(_cacheProbeCountKey);
+      final cachedProbeSignature = prefs.getInt(_cacheProbeSignatureKey);
 
       if (timestamp == null) return null;
       if (cacheVersion != _currentCacheSchemaVersion) {
+        return null;
+      }
+      if (cachedProbeCount == null || cachedProbeSignature == null) {
+        return null;
+      }
+      if (cachedProbeCount != probe.uniqueAssetCount ||
+          cachedProbeSignature != probe.signature) {
         return null;
       }
 
@@ -206,6 +226,8 @@ class VideoService {
       await prefs.remove(_cacheKey);
       await prefs.remove(_cacheTimestampKey);
       await prefs.remove(_cacheSchemaVersionKey);
+      await prefs.remove(_cacheProbeCountKey);
+      await prefs.remove(_cacheProbeSignatureKey);
       debugPrint('Video cache cleared');
     } catch (e) {
       debugPrint('Error clearing cache: $e');
@@ -215,8 +237,9 @@ class VideoService {
   /// Scan all videos from device using photo_manager
   static Future<List<VideoItem>> scanAllVideos() async {
     try {
+      final probe = await _buildLibraryProbe();
       // Try to load from cache first
-      final cachedVideos = await _loadCache();
+      final cachedVideos = await _loadCache(probe: probe);
       if (cachedVideos != null && cachedVideos.isNotEmpty) {
         debugPrint('Loaded ${cachedVideos.length} videos from cache');
         return cachedVideos;
@@ -229,53 +252,72 @@ class VideoService {
         hasAll: true,
       );
 
-      List<VideoItem> allVideos = [];
+      final allVideos = <VideoItem>[];
+      final seenAssetIds = <String>{};
+      final seenPaths = <String>{};
       int processedCount = 0;
 
-      for (var album in albums) {
-        final List<AssetEntity> assets = await album.getAssetListPaged(
-          page: 0,
-          size: 1000,
-        );
+      for (final album in albums) {
+        var page = 0;
+        while (true) {
+          final assets = await album.getAssetListPaged(
+            page: page,
+            size: _scanPageSize,
+          );
+          if (assets.isEmpty) break;
 
-        for (var asset in assets) {
-          processedCount++;
-
-          if (processedCount % 100 == 0) {
-            debugPrint('Processing: $processedCount videos');
-          }
-
-          try {
-            final file = await asset.file;
-            if (file == null) continue;
-
-            // Filter out non-video files (e.g., JPEG, PNG)
-            if (!_isValidVideoFile(file.path)) {
+          for (final asset in assets) {
+            if (!seenAssetIds.add(asset.id)) {
               continue;
             }
+            processedCount++;
 
-            allVideos.add(
-              VideoItem(
-                id: asset.id,
-                name: asset.title ?? path.basename(file.path),
-                path: file.path,
-                thumbnail: asset.id,
-                mimeType: _inferMimeType(file.path),
-                duration: Duration(seconds: asset.duration),
-                size: await file.length(),
-                dateModified: asset.modifiedDateTime,
-              ),
-            );
-          } catch (assetError) {
-            // Continue with next asset
-            continue;
+            if (processedCount % 100 == 0) {
+              debugPrint('Processing: $processedCount videos');
+            }
+
+            try {
+              final file = await asset.file;
+              if (file == null) continue;
+              final normalizedPath = file.path.trim();
+              if (normalizedPath.isEmpty) continue;
+              if (!seenPaths.add(normalizedPath)) {
+                continue;
+              }
+
+              // Filter out non-video files (e.g., JPEG, PNG)
+              if (!_isValidVideoFile(normalizedPath)) {
+                continue;
+              }
+
+              allVideos.add(
+                VideoItem(
+                  id: asset.id,
+                  name: asset.title ?? path.basename(normalizedPath),
+                  path: normalizedPath,
+                  thumbnail: asset.id,
+                  mimeType: _inferMimeType(normalizedPath),
+                  duration: Duration(seconds: asset.duration),
+                  size: await file.length(),
+                  dateModified: asset.modifiedDateTime,
+                ),
+              );
+            } catch (_) {
+              // Continue with next asset
+              continue;
+            }
           }
+
+          if (assets.length < _scanPageSize) {
+            break;
+          }
+          page += 1;
         }
       }
 
       // Save to cache
       if (allVideos.isNotEmpty) {
-        await _saveCache(allVideos);
+        await _saveCache(allVideos, probe: probe);
         debugPrint('Completed: ${allVideos.length} videos scanned');
       } else {
         debugPrint('No videos found');
@@ -329,4 +371,51 @@ class VideoService {
       return {'videos': <VideoItem>[], 'folders': <VideoFolder>[]};
     }
   }
+
+  static Future<_LibraryProbe> _buildLibraryProbe() async {
+    final albums = await PhotoManager.getAssetPathList(
+      type: RequestType.video,
+      hasAll: true,
+    );
+    final seenAssetIds = <String>{};
+    var signature = 17;
+
+    for (final album in albums) {
+      var page = 0;
+      while (true) {
+        final assets = await album.getAssetListPaged(
+          page: page,
+          size: _scanPageSize,
+        );
+        if (assets.isEmpty) break;
+
+        for (final asset in assets) {
+          if (!seenAssetIds.add(asset.id)) continue;
+          signature = (signature * 37) ^ asset.id.hashCode;
+          signature =
+              (signature * 37) ^ asset.modifiedDateTime.millisecondsSinceEpoch;
+        }
+
+        if (assets.length < _scanPageSize) {
+          break;
+        }
+        page += 1;
+      }
+    }
+
+    return _LibraryProbe(
+      uniqueAssetCount: seenAssetIds.length,
+      signature: signature,
+    );
+  }
+}
+
+class _LibraryProbe {
+  final int uniqueAssetCount;
+  final int signature;
+
+  const _LibraryProbe({
+    required this.uniqueAssetCount,
+    required this.signature,
+  });
 }

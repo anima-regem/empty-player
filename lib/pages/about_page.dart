@@ -38,7 +38,7 @@ class AboutPage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '- Local video browsing\n- Picture-in-Picture (PiP)\n- Metadata display\n- Custom playback speed\n- Background playback toggle\n\nPlanned: subtitles, audio track selection, enhancements.',
+            '- Local device library browsing\n- Continue watching with resume memory\n- Picture-in-Picture (PiP)\n- Network stream playback\n- Playback speed controls\n- External subtitle loading (.srt/.vtt)\n- On-device semantic and visual search indexing',
             style: GoogleFonts.lato(fontSize: 14),
           ),
           const SizedBox(height: 24),
@@ -59,7 +59,7 @@ class AboutPage extends StatelessWidget {
           ),
           const SizedBox(height: 32),
           Text(
-            '© 2025 Empty Player',
+            '© 2026 Empty Player',
             style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
           ),
         ],
