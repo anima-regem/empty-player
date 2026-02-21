@@ -2,6 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:empty_player/models/playback_session.dart';
 import 'package:empty_player/services/playback_controller_adapter.dart';
 
+@immutable
+class MiniPlayerLayoutState {
+  final bool isVisible;
+  final double reservedBottomInset;
+
+  const MiniPlayerLayoutState({
+    required this.isVisible,
+    required this.reservedBottomInset,
+  });
+
+  static const hidden = MiniPlayerLayoutState(
+    isVisible: false,
+    reservedBottomInset: 0,
+  );
+
+  @override
+  bool operator ==(Object other) {
+    return other is MiniPlayerLayoutState &&
+        other.isVisible == isVisible &&
+        other.reservedBottomInset == reservedBottomInset;
+  }
+
+  @override
+  int get hashCode => Object.hash(isVisible, reservedBottomInset);
+}
+
 class MiniPlayerService extends ChangeNotifier {
   static final MiniPlayerService _instance = MiniPlayerService._internal();
 
@@ -14,6 +40,7 @@ class MiniPlayerService extends ChangeNotifier {
   PlaybackControllerAdapter? _controller;
   PlaybackSession? _session;
   bool _isMinimized = false;
+  MiniPlayerLayoutState _layoutState = MiniPlayerLayoutState.hidden;
 
   PlaybackControllerAdapter? get controller => _controller;
   PlaybackSession? get session => _session;
@@ -21,6 +48,7 @@ class MiniPlayerService extends ChangeNotifier {
   String? get videoUrl => _session?.source.rawInput;
   bool get isMinimized => _isMinimized;
   bool get hasVideo => _controller != null;
+  MiniPlayerLayoutState get layoutState => _layoutState;
 
   void setController(
     PlaybackControllerAdapter controller,
@@ -83,6 +111,13 @@ class MiniPlayerService extends ChangeNotifier {
     _controller = null;
     _session = null;
     _isMinimized = false;
+    _layoutState = MiniPlayerLayoutState.hidden;
+    notifyListeners();
+  }
+
+  void setLayoutState(MiniPlayerLayoutState state) {
+    if (_layoutState == state) return;
+    _layoutState = state;
     notifyListeners();
   }
 

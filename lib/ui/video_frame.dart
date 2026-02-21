@@ -1,8 +1,8 @@
 import 'package:empty_player/pages/home_page.dart';
 import 'package:empty_player/pages/video_player.dart';
 import 'package:empty_player/models/media_source.dart';
+import 'package:empty_player/ui/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 
 class VideoFrame extends StatefulWidget {
@@ -61,12 +61,7 @@ class _VideoFrameState extends State<VideoFrame> {
     return MaterialApp(
       navigatorKey: _navKey,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: Colors.black,
-        primaryColor: Colors.white,
-        textTheme: GoogleFonts.latoTextTheme(ThemeData.dark().textTheme),
-      ),
+      theme: buildAppTheme(),
       title: 'Empty Player',
       home: const HomePage(),
     );

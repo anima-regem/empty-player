@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:empty_player/models/playback_session.dart';
 import 'package:empty_player/services/mini_player_service.dart';
 import 'package:empty_player/pages/video_player.dart';
+import 'package:empty_player/ui/app_theme_tokens.dart';
 
 class MiniPlayer extends StatefulWidget {
   const MiniPlayer({super.key});
@@ -12,6 +13,8 @@ class MiniPlayer extends StatefulWidget {
 }
 
 class _MiniPlayerState extends State<MiniPlayer> {
+  static const _cardHeight = 72.0;
+  static const _outerMargin = 8.0;
   final MiniPlayerService _miniPlayerService = MiniPlayerService();
 
   @override
@@ -63,19 +66,28 @@ class _MiniPlayerState extends State<MiniPlayer> {
   @override
   Widget build(BuildContext context) {
     if (!_miniPlayerService.hasVideo || !_miniPlayerService.isMinimized) {
+      _miniPlayerService.setLayoutState(MiniPlayerLayoutState.hidden);
       return const SizedBox.shrink();
     }
 
     final controller = _miniPlayerService.controller!;
     final session = _miniPlayerService.session!;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    final reservedInset = (_outerMargin * 2) + _cardHeight + safeBottom;
+    _miniPlayerService.setLayoutState(
+      MiniPlayerLayoutState(
+        isVisible: true,
+        reservedBottomInset: reservedInset,
+      ),
+    );
 
     return GestureDetector(
       onTap: _openFullPlayer,
       child: Container(
-        height: 72,
-        margin: const EdgeInsets.all(8),
+        height: _cardHeight,
+        margin: const EdgeInsets.all(_outerMargin),
         decoration: BoxDecoration(
-          color: Colors.grey.shade900,
+          color: AppThemeTokens.surfaceAlt,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
@@ -94,7 +106,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade800,
+                  color: AppThemeTokens.surface,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -131,7 +143,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                         return Text(
                           '${_formatDuration(position)} / ${_formatDuration(duration)}',
                           style: GoogleFonts.lato(
-                            color: Colors.grey.shade500,
+                            color: AppThemeTokens.textSecondary,
                             fontSize: 12,
                             fontWeight: FontWeight.w400,
                           ),
@@ -154,9 +166,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
                           borderRadius: BorderRadius.circular(2),
                           child: LinearProgressIndicator(
                             value: progress,
-                            backgroundColor: Colors.grey.shade800,
+                            backgroundColor: AppThemeTokens.surface,
                             valueColor: const AlwaysStoppedAnimation<Color>(
-                              Colors.white,
+                              AppThemeTokens.accent,
                             ),
                             minHeight: 3,
                           ),
@@ -187,7 +199,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
               IconButton(
                 onPressed: _closePlayer,
                 icon: const Icon(Icons.close_rounded, size: 24),
-                color: Colors.grey.shade500,
+                color: AppThemeTokens.textSecondary,
                 style: IconButton.styleFrom(
                   backgroundColor: Colors.transparent,
                 ),

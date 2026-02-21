@@ -3,6 +3,8 @@ import 'package:empty_player/models/media_source.dart';
 import 'package:empty_player/models/playback_session.dart';
 import 'package:empty_player/models/video_item.dart';
 import 'package:empty_player/pages/video_player.dart';
+import 'package:empty_player/ui/app_theme_tokens.dart';
+import 'package:empty_player/ui/layout_system.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class VideoListPage extends StatelessWidget {
@@ -12,10 +14,11 @@ class VideoListPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = LayoutMetrics.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppThemeTokens.scaffold,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: AppThemeTokens.scaffold,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, size: 22),
@@ -29,14 +32,14 @@ class VideoListPage extends StatelessWidget {
               folder.name,
               style: GoogleFonts.lato(
                 color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+                fontSize: metrics.isCompact ? 16 : 18,
+                fontWeight: FontWeight.w700,
               ),
             ),
             Text(
               '${folder.videoCount} video${folder.videoCount != 1 ? 's' : ''}',
               style: GoogleFonts.lato(
-                color: Colors.grey.shade600,
+                color: AppThemeTokens.textSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
               ),
@@ -45,17 +48,21 @@ class VideoListPage extends StatelessWidget {
         ),
       ),
       body: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: EdgeInsets.symmetric(vertical: metrics.sectionSpacing / 2),
         itemCount: folder.videos.length,
         itemBuilder: (context, index) {
           final video = folder.videos[index];
-          return _buildVideoItem(context, video);
+          return _buildVideoItem(context, video, metrics);
         },
       ),
     );
   }
 
-  Widget _buildVideoItem(BuildContext context, VideoItem video) {
+  Widget _buildVideoItem(
+    BuildContext context,
+    VideoItem video,
+    LayoutMetrics metrics,
+  ) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -76,14 +83,21 @@ class VideoListPage extends StatelessWidget {
           );
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: metrics.horizontalPadding,
+            vertical: 8,
+          ),
           child: Row(
             children: [
               Container(
-                width: 100,
+                width: metrics.isCompact ? 92 : 100,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade900,
+                  gradient: const LinearGradient(
+                    colors: [AppThemeTokens.surface, AppThemeTokens.surfaceAlt],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
               ),
@@ -97,7 +111,7 @@ class VideoListPage extends StatelessWidget {
                       style: GoogleFonts.lato(
                         color: Colors.white,
                         fontSize: 14,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -108,14 +122,14 @@ class VideoListPage extends StatelessWidget {
                         if (video.duration != null) ...[
                           Icon(
                             Icons.access_time,
-                            color: Colors.grey.shade600,
+                            color: AppThemeTokens.textSecondary,
                             size: 12,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             _formatDuration(video.duration!),
                             style: GoogleFonts.lato(
-                              color: Colors.grey.shade600,
+                              color: AppThemeTokens.textSecondary,
                               fontSize: 12,
                               fontWeight: FontWeight.w400,
                             ),
@@ -127,7 +141,7 @@ class VideoListPage extends StatelessWidget {
                             child: Text(
                               '•',
                               style: GoogleFonts.lato(
-                                color: Colors.grey.shade600,
+                                color: AppThemeTokens.textSecondary,
                                 fontSize: 12,
                               ),
                             ),
@@ -135,14 +149,14 @@ class VideoListPage extends StatelessWidget {
                         if (video.size != null) ...[
                           Icon(
                             Icons.storage,
-                            color: Colors.grey.shade600,
+                            color: AppThemeTokens.textSecondary,
                             size: 12,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             _formatFileSize(video.size!),
                             style: GoogleFonts.lato(
-                              color: Colors.grey.shade600,
+                              color: AppThemeTokens.textSecondary,
                               fontSize: 12,
                               fontWeight: FontWeight.w400,
                             ),

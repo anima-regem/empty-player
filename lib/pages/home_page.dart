@@ -1,20 +1,29 @@
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
+
+import 'package:empty_player/components/loading_animation.dart';
+import 'package:empty_player/components/mini_player.dart';
 import 'package:empty_player/models/media_source.dart';
 import 'package:empty_player/models/playback_session.dart';
 import 'package:empty_player/models/playback_state.dart';
 import 'package:empty_player/models/video_item.dart';
-import 'package:empty_player/pages/video_list_page.dart';
-import 'package:empty_player/pages/network_stream_page.dart';
-import 'package:empty_player/pages/video_player.dart';
-import 'package:empty_player/services/library_repository.dart';
-import 'package:empty_player/services/library_preferences_service.dart';
-import 'package:empty_player/services/playback_repository.dart';
-import 'package:empty_player/pages/settings_page.dart';
 import 'package:empty_player/pages/about_page.dart';
+import 'package:empty_player/pages/network_stream_page.dart';
+import 'package:empty_player/pages/settings_page.dart';
+import 'package:empty_player/pages/video_list_page.dart';
+import 'package:empty_player/pages/video_player.dart';
+import 'package:empty_player/services/library_preferences_service.dart';
+import 'package:empty_player/services/library_repository.dart';
+import 'package:empty_player/services/mini_player_service.dart';
+import 'package:empty_player/services/playback_repository.dart';
+import 'package:empty_player/ui/app_theme_tokens.dart';
+import 'package:empty_player/ui/layout_system.dart';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:empty_player/components/mini_player.dart';
-import 'package:empty_player/components/loading_animation.dart';
+
+enum _HeaderMenuAction { about, refresh, stream }
+
+enum _FolderMenuAction { open, pinToggle }
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -32,6 +41,7 @@ class _HomePageState extends State<HomePage>
       LibraryPreferencesService();
   final PlaybackRepository _playbackRepository =
       SharedPrefsPlaybackRepository();
+  final MiniPlayerService _miniPlayerService = MiniPlayerService();
 
   List<VideoFolder> _folders = [];
   List<VideoItem> _allVideos = [];
@@ -47,8 +57,15 @@ class _HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _miniPlayerService.addListener(_onMiniPlayerStateChanged);
     _initializePreferences();
     _loadVideos();
+  }
+
+  void _onMiniPlayerStateChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _initializePreferences() async {
@@ -79,21 +96,15 @@ class _HomePageState extends State<HomePage>
     });
 
     try {
-      // Check permission first
       final hasPermission = await _libraryRepository.hasLibraryPermission();
-
       if (!hasPermission) {
-        // Try to request permission
         final status = await _libraryRepository.requestLibraryPermission();
-
         if (!status.isGranted) {
           if (mounted) {
             setState(() {
               _isLoading = false;
               _permissionDenied = true;
             });
-
-            // Show dialog if permanently denied
             if (status.isPermanentlyDenied) {
               _showPermissionDialog();
             }
@@ -102,7 +113,6 @@ class _HomePageState extends State<HomePage>
         }
       }
 
-      // If we have permission, load videos
       final result = await _libraryRepository.getAllVideos();
       final playbackStates = await _playbackRepository.getRecentStates(
         limit: 5000,
@@ -111,31 +121,29 @@ class _HomePageState extends State<HomePage>
         for (final state in playbackStates) state.sourceInput: state,
       };
 
-      if (mounted) {
-        setState(() {
-          _folders = (result['folders'] as List<VideoFolder>).toList();
-          _allVideos = (result['videos'] as List<VideoItem>)
-              .map(
-                (video) => video.copyWith(
-                  lastPositionMs: playbackBySource[video.path]?.positionMs,
-                  lastPlayedAt: playbackBySource[video.path]?.updatedAt,
-                  playCount: playbackBySource[video.path]?.playCount ?? 0,
-                  isFavorite: _favoriteMediaIds.contains(video.id),
-                ),
-              )
-              .toList();
-          _isLoading = false;
-          _permissionDenied = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _folders = (result['folders'] as List<VideoFolder>).toList();
+        _allVideos = (result['videos'] as List<VideoItem>)
+            .map(
+              (video) => video.copyWith(
+                lastPositionMs: playbackBySource[video.path]?.positionMs,
+                lastPlayedAt: playbackBySource[video.path]?.updatedAt,
+                playCount: playbackBySource[video.path]?.playCount ?? 0,
+                isFavorite: _favoriteMediaIds.contains(video.id),
+              ),
+            )
+            .toList();
+        _isLoading = false;
+        _permissionDenied = false;
+      });
     } catch (e) {
       debugPrint('Error loading videos: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _permissionDenied = true;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _permissionDenied = true;
+      });
     }
   }
 
@@ -143,24 +151,24 @@ class _HomePageState extends State<HomePage>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey.shade900,
+        backgroundColor: AppThemeTokens.surface,
         title: Text(
           'Permission Required',
           style: GoogleFonts.lato(
             color: Colors.white,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
         content: Text(
           'Video access is permanently denied. Please enable it in Settings to view your videos.',
-          style: GoogleFonts.lato(color: Colors.grey.shade400),
+          style: GoogleFonts.lato(color: AppThemeTokens.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Cancel',
-              style: GoogleFonts.lato(color: Colors.grey.shade400),
+              style: GoogleFonts.lato(color: AppThemeTokens.textSecondary),
             ),
           ),
           TextButton(
@@ -224,9 +232,7 @@ class _HomePageState extends State<HomePage>
     filtered.sort((a, b) {
       final aPinned = _pinnedFolderPaths.contains(a.path);
       final bPinned = _pinnedFolderPaths.contains(b.path);
-      if (aPinned != bPinned) {
-        return aPinned ? -1 : 1;
-      }
+      if (aPinned != bPinned) return aPinned ? -1 : 1;
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
 
@@ -249,9 +255,7 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _setSortOption(LibrarySortOption option) async {
-    setState(() {
-      _sortOption = option;
-    });
+    setState(() => _sortOption = option);
     await _libraryPreferences.setSortOption(option);
   }
 
@@ -259,9 +263,7 @@ class _HomePageState extends State<HomePage>
     await _libraryPreferences.togglePinnedFolder(folder.path);
     final pinned = await _libraryPreferences.getPinnedFolders();
     if (!mounted) return;
-    setState(() {
-      _pinnedFolderPaths = pinned;
-    });
+    setState(() => _pinnedFolderPaths = pinned);
   }
 
   Future<void> _toggleFavorite(VideoItem video) async {
@@ -298,11 +300,8 @@ class _HomePageState extends State<HomePage>
         ),
       );
       final refreshed = await _playbackRepository.getLastPlayed();
-      if (mounted) {
-        setState(() {
-          _lastPlayed = refreshed;
-        });
-      }
+      if (!mounted) return;
+      setState(() => _lastPlayed = refreshed);
     } on FormatException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -311,31 +310,63 @@ class _HomePageState extends State<HomePage>
     }
   }
 
+  Future<void> _handleHeaderMenuAction(_HeaderMenuAction action) async {
+    switch (action) {
+      case _HeaderMenuAction.about:
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const AboutPage()),
+        );
+        break;
+      case _HeaderMenuAction.refresh:
+        await _libraryRepository.clearCache();
+        await _loadVideos();
+        await _initializePreferences();
+        break;
+      case _HeaderMenuAction.stream:
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const NetworkStreamPage()),
+        );
+        break;
+    }
+  }
+
   @override
   void dispose() {
+    _miniPlayerService.removeListener(_onMiniPlayerStateChanged);
     _tabController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final metrics = LayoutMetrics.of(context);
+    final miniPlayerInset = _miniPlayerService.layoutState.reservedBottomInset;
+    final insets = resolveScaffoldInsets(
+      context,
+      miniPlayerInset: miniPlayerInset,
+    );
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppThemeTokens.scaffold,
       body: SafeArea(
         child: Stack(
           children: [
             Column(
               children: [
-                _buildHeader(),
-                const SizedBox(height: 8),
-                _buildTabs(),
-                const SizedBox(height: 12),
-                _buildSearchAndSortBar(),
+                _buildHeader(metrics),
+                SizedBox(height: metrics.sectionSpacing),
+                _buildTabs(metrics),
+                SizedBox(height: metrics.sectionSpacing),
+                _buildSearchAndSortBar(metrics),
                 if (_lastPlayed != null) ...[
-                  const SizedBox(height: 8),
-                  _buildContinueWatchingCard(),
+                  SizedBox(height: metrics.sectionSpacing),
+                  _buildContinueWatchingCard(metrics),
                 ],
-                const SizedBox(height: 16),
+                SizedBox(height: metrics.sectionSpacing),
                 Expanded(
                   child: _isLoading
                       ? _buildLoadingState()
@@ -344,25 +375,29 @@ class _HomePageState extends State<HomePage>
                       : TabBarView(
                           controller: _tabController,
                           children: [
-                            _buildFoldersView(),
-                            _buildAllVideosView(),
+                            _buildFoldersView(metrics, insets),
+                            _buildAllVideosView(metrics, insets),
                           ],
                         ),
                 ),
-                const SizedBox(height: 80), // Space for mini player
               ],
             ),
-            // Mini player at bottom
-            Positioned(left: 0, right: 0, bottom: 0, child: const MiniPlayer()),
+            const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(LayoutMetrics metrics) {
+    final compact = metrics.isCompact;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+      padding: EdgeInsets.fromLTRB(
+        metrics.horizontalPadding,
+        metrics.sectionSpacing + 8,
+        metrics.horizontalPadding,
+        metrics.sectionSpacing,
+      ),
       child: Row(
         children: [
           Expanded(
@@ -373,92 +408,65 @@ class _HomePageState extends State<HomePage>
                   'Library',
                   style: GoogleFonts.lato(
                     color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -1,
+                    fontSize: compact ? 28 : 32,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.7,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   '${_allVideos.length} videos',
                   style: GoogleFonts.lato(
-                    color: Colors.grey.shade600,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
+                    color: AppThemeTokens.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
-          // Settings
-          IconButton(
-            onPressed: () {
+          if (!compact) ...[
+            _buildHeaderAction(
+              icon: Icons.link_rounded,
+              tooltip: 'Stream URL',
+              onTap: () => _handleHeaderMenuAction(_HeaderMenuAction.stream),
+            ),
+            SizedBox(width: metrics.compactActionSpacing),
+          ],
+          _buildHeaderAction(
+            icon: Icons.settings_outlined,
+            tooltip: 'Settings',
+            onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsPage()),
               );
             },
-            icon: const Icon(Icons.settings_outlined, size: 22),
-            color: Colors.grey.shade500,
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.grey.shade900,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
           ),
-          const SizedBox(width: 8),
-          // About
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AboutPage()),
-              );
-            },
-            icon: const Icon(Icons.info_outline, size: 22),
-            color: Colors.grey.shade500,
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.grey.shade900,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          SizedBox(width: metrics.compactActionSpacing),
+          PopupMenuButton<_HeaderMenuAction>(
+            color: AppThemeTokens.surface,
+            onSelected: _handleHeaderMenuAction,
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _HeaderMenuAction.about,
+                child: Text('About'),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: () async {
-              // Clear cache and reload
-              await _libraryRepository.clearCache();
-              await _loadVideos();
-              await _initializePreferences();
-            },
-            icon: const Icon(Icons.refresh_rounded, size: 22),
-            color: Colors.grey.shade500,
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.grey.shade900,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              const PopupMenuItem(
+                value: _HeaderMenuAction.refresh,
+                child: Text('Refresh Library'),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NetworkStreamPage(),
+              if (compact)
+                const PopupMenuItem(
+                  value: _HeaderMenuAction.stream,
+                  child: Text('Stream URL'),
                 ),
-              );
-            },
-            icon: const Icon(Icons.link_rounded, size: 22),
-            color: Colors.grey.shade500,
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.grey.shade900,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+            ],
+            child: _buildHeaderAction(
+              icon: Icons.more_horiz_rounded,
+              tooltip: 'More',
+              onTap: () {},
+              absorbTap: true,
             ),
           ),
         ],
@@ -466,28 +474,49 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildTabs() {
+  Widget _buildHeaderAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool absorbTap = false,
+  }) {
+    final action = Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppThemeTokens.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: AppThemeTokens.textSecondary, size: 21),
+    );
+    if (absorbTap) return action;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: action,
+      ),
+    );
+  }
+
+  Widget _buildTabs(LayoutMetrics metrics) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
       child: TabBar(
         controller: _tabController,
         indicator: const UnderlineTabIndicator(
-          borderSide: BorderSide(color: Colors.white, width: 2),
-          insets: EdgeInsets.symmetric(horizontal: 0),
+          borderSide: BorderSide(color: AppThemeTokens.accent, width: 2),
+          insets: EdgeInsets.zero,
         ),
-        labelStyle: GoogleFonts.lato(
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0,
-        ),
+        labelStyle: GoogleFonts.lato(fontSize: 15, fontWeight: FontWeight.w700),
         unselectedLabelStyle: GoogleFonts.lato(
           fontSize: 15,
           fontWeight: FontWeight.w500,
         ),
         labelColor: Colors.white,
-        unselectedLabelColor: Colors.grey.shade600,
-        dividerColor: Colors.grey.shade900,
-        indicatorSize: TabBarIndicatorSize.tab,
+        unselectedLabelColor: AppThemeTokens.textSecondary,
+        dividerColor: AppThemeTokens.surface,
         tabs: const [
           Tab(text: 'Folders'),
           Tab(text: 'All Videos'),
@@ -496,102 +525,139 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildSearchAndSortBar() {
+  Widget _buildSearchAndSortBar(LayoutMetrics metrics) {
+    if (metrics.isCompact) {
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildSearchField(),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _buildSortButton(compact: true),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
       child: Row(
         children: [
-          Expanded(
-            child: TextField(
-              onChanged: (value) => setState(() => _searchQuery = value),
-              style: GoogleFonts.lato(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Search videos or folders',
-                hintStyle: GoogleFonts.lato(color: Colors.grey.shade600),
-                prefixIcon: Icon(Icons.search, color: Colors.grey.shade500),
-                filled: true,
-                fillColor: Colors.grey.shade900,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          PopupMenuButton<LibrarySortOption>(
-            initialValue: _sortOption,
-            onSelected: _setSortOption,
-            color: Colors.grey.shade900,
-            itemBuilder: (context) => LibrarySortOption.values
-                .map(
-                  (option) => PopupMenuItem<LibrarySortOption>(
-                    value: option,
-                    child: Text(
-                      _sortLabel(option),
-                      style: GoogleFonts.lato(color: Colors.white),
-                    ),
-                  ),
-                )
-                .toList(),
-            child: Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade900,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.sort_rounded, color: Colors.white, size: 18),
-                  const SizedBox(width: 6),
-                  Text(
-                    _sortLabel(_sortOption),
-                    style: GoogleFonts.lato(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          Expanded(child: _buildSearchField()),
+          const SizedBox(width: 10),
+          _buildSortButton(compact: false),
         ],
       ),
     );
   }
 
-  Widget _buildContinueWatchingCard() {
+  Widget _buildSearchField() {
+    return TextField(
+      onChanged: (value) => setState(() => _searchQuery = value),
+      style: GoogleFonts.lato(color: Colors.white),
+      decoration: InputDecoration(
+        hintText: 'Search videos or folders',
+        hintStyle: GoogleFonts.lato(color: AppThemeTokens.textSecondary),
+        prefixIcon: const Icon(
+          Icons.search,
+          color: AppThemeTokens.textSecondary,
+        ),
+        filled: true,
+        fillColor: AppThemeTokens.surface,
+        contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortButton({required bool compact}) {
+    return PopupMenuButton<LibrarySortOption>(
+      initialValue: _sortOption,
+      onSelected: _setSortOption,
+      color: AppThemeTokens.surface,
+      itemBuilder: (context) => LibrarySortOption.values
+          .map(
+            (option) => PopupMenuItem<LibrarySortOption>(
+              value: option,
+              child: Text(
+                _sortLabel(option),
+                style: GoogleFonts.lato(color: Colors.white),
+              ),
+            ),
+          )
+          .toList(),
+      child: Container(
+        height: 46,
+        constraints: BoxConstraints(minWidth: compact ? 140 : 0),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppThemeTokens.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppThemeTokens.surfaceAlt),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.sort_rounded, color: Colors.white, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              _sortLabel(_sortOption),
+              style: GoogleFonts.lato(color: Colors.white, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContinueWatchingCard(LayoutMetrics metrics) {
     final lastPlayed = _lastPlayed;
     if (lastPlayed == null) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: _openLastPlayed,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: metrics.isCompact ? 12 : 14,
+              vertical: 12,
+            ),
             decoration: BoxDecoration(
-              color: Colors.grey.shade900,
+              color: AppThemeTokens.surface,
               borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppThemeTokens.surfaceAlt),
             ),
             child: Row(
               children: [
-                const Icon(Icons.play_circle_fill_rounded, color: Colors.white),
+                const Icon(
+                  Icons.play_circle_fill_rounded,
+                  color: AppThemeTokens.accent,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Continue watching',
-                        style: GoogleFonts.lato(
-                          color: Colors.grey.shade500,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                      if (!metrics.isCompact)
+                        Text(
+                          'Continue watching',
+                          style: GoogleFonts.lato(
+                            color: AppThemeTokens.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
                       Text(
                         lastPlayed.title,
                         maxLines: 1,
@@ -599,16 +665,17 @@ class _HomePageState extends State<HomePage>
                         style: GoogleFonts.lato(
                           color: Colors.white,
                           fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   _formatDuration(lastPlayed.position),
                   style: GoogleFonts.lato(
-                    color: Colors.grey.shade500,
+                    color: AppThemeTokens.textSecondary,
                     fontSize: 12,
                   ),
                 ),
@@ -620,23 +687,32 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildFoldersView() {
+  Widget _buildFoldersView(
+    LayoutMetrics metrics,
+    ResponsiveScaffoldInsets insets,
+  ) {
     final folders = _visibleFolders;
-    if (folders.isEmpty) {
-      return _buildEmptyState();
-    }
+    if (folders.isEmpty) return _buildEmptyState();
 
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 8),
+    return ListView.separated(
+      padding: EdgeInsets.fromLTRB(
+        0,
+        4,
+        0,
+        insets.reservedBottomInset + metrics.sectionSpacing,
+      ),
       itemCount: folders.length,
-      itemBuilder: (context, index) {
-        final folder = folders[index];
-        return _buildFolderCard(folder);
-      },
+      separatorBuilder: (context, index) => Divider(
+        color: AppThemeTokens.surface.withValues(alpha: 0.7),
+        height: 1,
+      ),
+      itemBuilder: (context, index) =>
+          _buildFolderCard(metrics, folders[index]),
     );
   }
 
-  Widget _buildFolderCard(VideoFolder folder) {
+  Widget _buildFolderCard(LayoutMetrics metrics, VideoFolder folder) {
+    final isPinned = _pinnedFolderPaths.contains(folder.path);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -649,40 +725,59 @@ class _HomePageState extends State<HomePage>
           );
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          padding: EdgeInsets.symmetric(
+            horizontal: metrics.horizontalPadding,
+            vertical: 12,
+          ),
           child: Row(
             children: [
               Container(
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade900,
+                  color: AppThemeTokens.surface,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.folder_outlined,
-                  color: Colors.grey.shade400,
+                  color: AppThemeTokens.textSecondary,
                   size: 22,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      folder.name,
-                      style: GoogleFonts.lato(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            folder.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.lato(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (isPinned) ...[
+                          const SizedBox(width: 6),
+                          const Icon(
+                            Icons.push_pin_rounded,
+                            size: 16,
+                            color: AppThemeTokens.accent,
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${folder.videoCount} video${folder.videoCount != 1 ? 's' : ''}',
                       style: GoogleFonts.lato(
-                        color: Colors.grey.shade600,
+                        color: AppThemeTokens.textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w400,
                       ),
@@ -690,19 +785,43 @@ class _HomePageState extends State<HomePage>
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: () => _togglePinnedFolder(folder),
-                icon: Icon(
-                  _pinnedFolderPaths.contains(folder.path)
-                      ? Icons.push_pin
-                      : Icons.push_pin_outlined,
-                  color: _pinnedFolderPaths.contains(folder.path)
-                      ? Colors.white
-                      : Colors.grey.shade700,
-                  size: 18,
+              PopupMenuButton<_FolderMenuAction>(
+                color: AppThemeTokens.surface,
+                onSelected: (action) async {
+                  switch (action) {
+                    case _FolderMenuAction.open:
+                      if (!mounted) return;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => VideoListPage(folder: folder),
+                        ),
+                      );
+                      break;
+                    case _FolderMenuAction.pinToggle:
+                      await _togglePinnedFolder(folder);
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: _FolderMenuAction.open,
+                    child: Text('Open'),
+                  ),
+                  PopupMenuItem(
+                    value: _FolderMenuAction.pinToggle,
+                    child: Text(isPinned ? 'Unpin folder' : 'Pin folder'),
+                  ),
+                ],
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.more_vert_rounded,
+                    color: AppThemeTokens.textSecondary,
+                    size: 20,
+                  ),
                 ),
               ),
-              Icon(Icons.chevron_right, color: Colors.grey.shade700, size: 20),
             ],
           ),
         ),
@@ -710,24 +829,40 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildAllVideosView() {
+  Widget _buildAllVideosView(
+    LayoutMetrics metrics,
+    ResponsiveScaffoldInsets insets,
+  ) {
     final videos = _visibleVideos;
-    if (videos.isEmpty) {
-      return _buildEmptyState();
-    }
+    if (videos.isEmpty) return _buildEmptyState();
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 20,
-        childAspectRatio: 0.7,
-      ),
-      itemCount: videos.length,
-      itemBuilder: (context, index) {
-        final video = videos[index];
-        return _buildVideoCard(video);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minWidth = metrics.isCompact
+            ? 152.0
+            : metrics.isMedium
+            ? 174.0
+            : 198.0;
+        final computed = (constraints.maxWidth / minWidth).floor();
+        final crossAxisCount = math.max(metrics.minGridColumns, computed);
+        final aspectRatio = metrics.isCompact ? 0.74 : 0.78;
+
+        return GridView.builder(
+          padding: EdgeInsets.fromLTRB(
+            metrics.horizontalPadding,
+            8,
+            metrics.horizontalPadding,
+            insets.reservedBottomInset + metrics.sectionSpacing,
+          ),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            crossAxisSpacing: metrics.cardSpacing,
+            mainAxisSpacing: metrics.cardSpacing + 4,
+            childAspectRatio: aspectRatio,
+          ),
+          itemCount: videos.length,
+          itemBuilder: (context, index) => _buildVideoCard(videos[index]),
+        );
       },
     );
   }
@@ -737,23 +872,14 @@ class _HomePageState extends State<HomePage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CompactLoadingAnimation(color: Colors.white),
-          const SizedBox(height: 24),
-          Text(
-            'empty player',
-            style: GoogleFonts.lato(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const CompactLoadingAnimation(color: AppThemeTokens.accent),
+          const SizedBox(height: 20),
           Text(
             'Scanning videos...',
             style: GoogleFonts.lato(
-              color: Colors.grey.shade600,
+              color: AppThemeTokens.textSecondary,
               fontSize: 14,
-              fontWeight: FontWeight.w400,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -768,10 +894,10 @@ class _HomePageState extends State<HomePage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
+            const Icon(
               Icons.lock_open_rounded,
               size: 48,
-              color: Colors.grey.shade800,
+              color: AppThemeTokens.textSecondary,
             ),
             const SizedBox(height: 20),
             Text(
@@ -779,7 +905,7 @@ class _HomePageState extends State<HomePage>
               style: GoogleFonts.lato(
                 color: Colors.white,
                 fontSize: 20,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 8),
@@ -787,31 +913,24 @@ class _HomePageState extends State<HomePage>
               'Allow access to display your videos',
               textAlign: TextAlign.center,
               style: GoogleFonts.lato(
-                color: Colors.grey.shade600,
+                color: AppThemeTokens.textSecondary,
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
               ),
             ),
             const SizedBox(height: 24),
-            TextButton(
+            FilledButton(
               onPressed: _loadVideos,
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.white,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppThemeTokens.accent,
                 foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
               child: Text(
                 'Grant Access',
-                style: GoogleFonts.lato(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
+                style: GoogleFonts.lato(fontWeight: FontWeight.w700),
               ),
             ),
           ],
@@ -826,7 +945,6 @@ class _HomePageState extends State<HomePage>
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () async {
-          // Play video - navigate to video player
           await Navigator.push(
             context,
             MaterialPageRoute(
@@ -842,11 +960,8 @@ class _HomePageState extends State<HomePage>
             ),
           );
           final refreshed = await _playbackRepository.getLastPlayed();
-          if (mounted) {
-            setState(() {
-              _lastPlayed = refreshed;
-            });
-          }
+          if (!mounted) return;
+          setState(() => _lastPlayed = refreshed);
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -856,7 +971,14 @@ class _HomePageState extends State<HomePage>
                 children: [
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade900,
+                      gradient: const LinearGradient(
+                        colors: [
+                          AppThemeTokens.surface,
+                          AppThemeTokens.surfaceAlt,
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
@@ -893,7 +1015,7 @@ class _HomePageState extends State<HomePage>
                           vertical: 3,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.8),
+                          color: Colors.black.withValues(alpha: 0.78),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -901,7 +1023,7 @@ class _HomePageState extends State<HomePage>
                           style: GoogleFonts.lato(
                             color: Colors.white,
                             fontSize: 11,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -915,7 +1037,7 @@ class _HomePageState extends State<HomePage>
               style: GoogleFonts.lato(
                 color: Colors.white,
                 fontSize: 13,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -925,9 +1047,8 @@ class _HomePageState extends State<HomePage>
               Text(
                 _formatFileSize(video.size!),
                 style: GoogleFonts.lato(
-                  color: Colors.grey.shade600,
+                  color: AppThemeTokens.textSecondary,
                   fontSize: 11,
-                  fontWeight: FontWeight.w400,
                 ),
               ),
             ],
@@ -938,9 +1059,9 @@ class _HomePageState extends State<HomePage>
               Text(
                 'Resume ${_formatDuration(Duration(milliseconds: video.lastPositionMs!))}',
                 style: GoogleFonts.lato(
-                  color: Colors.grey.shade500,
+                  color: AppThemeTokens.accent,
                   fontSize: 11,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -959,15 +1080,15 @@ class _HomePageState extends State<HomePage>
             'assets/empty.png',
             width: 80,
             height: 80,
-            color: Colors.grey.shade800,
+            color: AppThemeTokens.textSecondary,
           ),
           const SizedBox(height: 20),
           Text(
             'No videos',
             style: GoogleFonts.lato(
-              color: Colors.grey.shade600,
+              color: AppThemeTokens.textSecondary,
               fontSize: 16,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -980,7 +1101,6 @@ class _HomePageState extends State<HomePage>
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     final seconds = duration.inSeconds.remainder(60);
-
     if (hours > 0) {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }
@@ -988,14 +1108,11 @@ class _HomePageState extends State<HomePage>
   }
 
   String _formatFileSize(int bytes) {
-    if (bytes < 1024) {
-      return '$bytes B';
-    } else if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    } else if (bytes < 1024 * 1024 * 1024) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    } else {
-      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
     }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 }

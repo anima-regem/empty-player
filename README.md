@@ -7,11 +7,14 @@ Simple Flutter video/audio player scaffold with a mini player component and basi
 
 ## Features
 - Mini player overlay (`components/mini_player.dart`) with service-driven state (`services/mini_player_service.dart`).
+- Adaptive layout system for compact/medium/expanded Android screens (`ui/layout_system.dart`).
+- Shared UI tokens and theme foundation (`ui/app_theme_tokens.dart`).
 - Fun loading animations (`components/loading_animation.dart`) with pulsating and rotating effects.
 - Video list and playback (`pages/video_list_page.dart`, `pages/video_player.dart`).
 - Network stream demo (`pages/network_stream_page.dart`).
 - Basic settings + about pages.
 - Lightweight models (`models/video_item.dart`).
+- On-device visual-search feasibility scaffolding (`services/embedding_runtime.dart`, `services/vector_index_repository.dart`, `services/visual_search_spike_service.dart`).
 
 ## Project Structure (key parts)
 ```
@@ -81,6 +84,7 @@ Download the latest release APK from the [Releases page](../../releases).
 - Add playlists & queue management.
 - Persist playback position with `shared_preferences`.
 - Expand settings (brightness, orientation, quality selection).
+- Replace deterministic spike embedding runtime with a native on-device runtime and keep the same interfaces.
 
 ## License
 See `LICENSE` file for details.

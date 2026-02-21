@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:empty_player/ui/app_theme_tokens.dart';
+import 'package:empty_player/ui/layout_system.dart';
 import '../services/app_settings_service.dart';
 import '../services/update_check_service.dart';
 import '../components/loading_animation.dart';
@@ -98,11 +100,20 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = LayoutMetrics.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text('Settings', style: GoogleFonts.lato())),
+      backgroundColor: AppThemeTokens.scaffold,
+      appBar: AppBar(
+        backgroundColor: AppThemeTokens.scaffold,
+        title: Text(
+          'Settings',
+          style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+        ),
+      ),
       body: _loading
           ? const Center(child: CompactLoadingAnimation())
           : ListView(
+              padding: EdgeInsets.only(bottom: metrics.sectionSpacing + 16),
               children: [
                 _sectionHeader('Playback'),
                 SwitchListTile(
@@ -179,7 +190,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: const Icon(Icons.download),
                       label: Text('Download Update', style: GoogleFonts.lato()),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: AppThemeTokens.accent,
                         foregroundColor: Colors.white,
                       ),
                     ),
@@ -205,7 +216,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
                     'Some features are placeholders pending enhanced player integration.',
-                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                    style: GoogleFonts.lato(
+                      fontSize: 12,
+                      color: AppThemeTokens.textSecondary,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -219,7 +233,11 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
         text,
-        style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold),
+        style: GoogleFonts.lato(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
       ),
     );
   }
@@ -245,7 +263,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return Text(
       'You are up to date',
-      style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+      style: GoogleFonts.lato(
+        fontSize: 12,
+        color: AppThemeTokens.textSecondary,
+      ),
     );
   }
 }

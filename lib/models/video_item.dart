@@ -11,6 +11,9 @@ class VideoItem {
   final DateTime? lastPlayedAt;
   final int playCount;
   final bool isFavorite;
+  final DateTime? indexedAt;
+  final int? indexedFrameCount;
+  final String? visualIndexVersion;
 
   VideoItem({
     String? id,
@@ -25,6 +28,9 @@ class VideoItem {
     this.lastPlayedAt,
     this.playCount = 0,
     this.isFavorite = false,
+    this.indexedAt,
+    this.indexedFrameCount,
+    this.visualIndexVersion,
   }) : id = id ?? path;
 
   VideoItem copyWith({
@@ -40,6 +46,9 @@ class VideoItem {
     DateTime? lastPlayedAt,
     int? playCount,
     bool? isFavorite,
+    DateTime? indexedAt,
+    int? indexedFrameCount,
+    String? visualIndexVersion,
   }) {
     return VideoItem(
       id: id ?? this.id,
@@ -54,6 +63,9 @@ class VideoItem {
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
       playCount: playCount ?? this.playCount,
       isFavorite: isFavorite ?? this.isFavorite,
+      indexedAt: indexedAt ?? this.indexedAt,
+      indexedFrameCount: indexedFrameCount ?? this.indexedFrameCount,
+      visualIndexVersion: visualIndexVersion ?? this.visualIndexVersion,
     );
   }
 
@@ -70,6 +82,9 @@ class VideoItem {
     'lastPlayedAt': lastPlayedAt?.toIso8601String(),
     'playCount': playCount,
     'isFavorite': isFavorite,
+    'indexedAt': indexedAt?.toIso8601String(),
+    'indexedFrameCount': indexedFrameCount,
+    'visualIndexVersion': visualIndexVersion,
   };
 
   factory VideoItem.fromJson(Map<String, dynamic> json) => VideoItem(
@@ -91,6 +106,11 @@ class VideoItem {
         : null,
     playCount: (json['playCount'] as int?) ?? 0,
     isFavorite: (json['isFavorite'] as bool?) ?? false,
+    indexedAt: json['indexedAt'] != null
+        ? DateTime.parse(json['indexedAt'] as String)
+        : null,
+    indexedFrameCount: json['indexedFrameCount'] as int?,
+    visualIndexVersion: json['visualIndexVersion'] as String?,
   );
 }
 

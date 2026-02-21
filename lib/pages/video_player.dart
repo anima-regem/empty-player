@@ -17,6 +17,8 @@ import 'package:empty_player/services/playback_controller_adapter.dart';
 import 'package:empty_player/services/player_engine.dart';
 import 'package:empty_player/services/player_close_policy.dart';
 import 'package:empty_player/services/subtitle_service.dart';
+import 'package:empty_player/ui/app_theme_tokens.dart';
+import 'package:empty_player/ui/layout_system.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:empty_player/components/loading_animation.dart';
 
@@ -655,7 +657,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     if (_controller.value.hasError) {
       return Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: AppThemeTokens.scaffold,
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
@@ -703,13 +705,13 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
 
     if (!_controller.value.isInitialized) {
       return Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: AppThemeTokens.scaffold,
         body: const Center(child: CompactLoadingAnimation(color: Colors.red)),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppThemeTokens.scaffold,
       body: PopScope(
         canPop: false,
         onPopInvokedWithResult: (bool didPop, dynamic result) async {
@@ -1002,7 +1004,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 Positioned(
                   left: 20,
                   right: 20,
-                  bottom: _showControls ? 120 : 36,
+                  bottom: _subtitleBottomInset(context),
                   child: IgnorePointer(
                     child: AnimatedOpacity(
                       opacity: 1.0,
@@ -1072,6 +1074,13 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  double _subtitleBottomInset(BuildContext context) {
+    final metrics = LayoutMetrics.of(context);
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    if (!_showControls) return safeBottom + 28;
+    return safeBottom + (metrics.isCompact ? 170 : 122);
   }
 
   Widget _buildTopBar() {
@@ -1149,6 +1158,8 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   }
 
   Widget _buildBottomControls() {
+    final metrics = LayoutMetrics.of(context);
+    final compact = metrics.isCompact;
     final position = _controller.value.position;
     final duration = _controller.value.duration;
     final buffered = _controller.value.buffered.isNotEmpty
@@ -1160,7 +1171,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       children: [
         // Progress Bar
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 16),
           child: Row(
             children: [
               Text(
@@ -1212,106 +1223,153 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
 
         // Control Buttons
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  // Play/Pause
-                  IconButton(
-                    icon: Icon(
-                      _controller.value.isPlaying
-                          ? Icons.pause_circle_filled_rounded
-                          : Icons.play_circle_filled_rounded,
-                    ),
-                    color: Colors.white,
-                    iconSize: 36,
-                    onPressed: _togglePlayPause,
-                  ),
-
-                  // Rewind 10s
-                  IconButton(
-                    icon: const Icon(Icons.replay_10_rounded),
-                    color: Colors.white,
-                    iconSize: 32,
-                    onPressed: () => _seekRelative(-10),
-                  ),
-
-                  // Forward 10s
-                  IconButton(
-                    icon: const Icon(Icons.forward_10_rounded),
-                    color: Colors.white,
-                    iconSize: 32,
-                    onPressed: () => _seekRelative(10),
-                  ),
-
-                  // Speed indicator
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '${_playbackSpeed}x',
-                      style: GoogleFonts.lato(
-                        color: Colors.white,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              Row(
-                children: [
-                  // Settings Menu
-                  GestureDetector(
-                    onTap: () {
-                      _showSettingsDialog();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.settings_rounded,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Fullscreen Toggle
-                  GestureDetector(
-                    onTap: _toggleFullScreen,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        _isFullScreen
-                            ? Icons.fullscreen_exit_rounded
-                            : Icons.fullscreen_rounded,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 10 : 16,
+            vertical: compact ? 6 : 8,
           ),
+          child: compact
+              ? Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            _controller.value.isPlaying
+                                ? Icons.pause_circle_filled_rounded
+                                : Icons.play_circle_filled_rounded,
+                          ),
+                          color: Colors.white,
+                          iconSize: 34,
+                          onPressed: _togglePlayPause,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.replay_10_rounded),
+                          color: Colors.white,
+                          iconSize: metrics.controlIconSize,
+                          onPressed: () => _seekRelative(-10),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.forward_10_rounded),
+                          color: Colors.white,
+                          iconSize: metrics.controlIconSize,
+                          onPressed: () => _seekRelative(10),
+                        ),
+                        _buildRoundActionButton(
+                          icon: Icons.settings_rounded,
+                          onTap: _showSettingsDialog,
+                        ),
+                        const SizedBox(width: 8),
+                        _buildRoundActionButton(
+                          icon: _isFullScreen
+                              ? Icons.fullscreen_exit_rounded
+                              : Icons.fullscreen_rounded,
+                          onTap: _toggleFullScreen,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${_playbackSpeed}x',
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            _controller.value.isPlaying
+                                ? Icons.pause_circle_filled_rounded
+                                : Icons.play_circle_filled_rounded,
+                          ),
+                          color: Colors.white,
+                          iconSize: 36,
+                          onPressed: _togglePlayPause,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.replay_10_rounded),
+                          color: Colors.white,
+                          iconSize: 32,
+                          onPressed: () => _seekRelative(-10),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.forward_10_rounded),
+                          color: Colors.white,
+                          iconSize: 32,
+                          onPressed: () => _seekRelative(10),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '${_playbackSpeed}x',
+                            style: GoogleFonts.lato(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        _buildRoundActionButton(
+                          icon: Icons.settings_rounded,
+                          onTap: _showSettingsDialog,
+                        ),
+                        const SizedBox(width: 8),
+                        _buildRoundActionButton(
+                          icon: _isFullScreen
+                              ? Icons.fullscreen_exit_rounded
+                              : Icons.fullscreen_rounded,
+                          onTap: _toggleFullScreen,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRoundActionButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.3),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Colors.white, size: 24),
+      ),
     );
   }
 
@@ -1361,226 +1419,254 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     });
   }
 
+  Widget _buildResponsiveSheet({
+    required BuildContext context,
+    required Widget child,
+    double maxHeightFactor = 0.9,
+  }) {
+    final maxHeight = MediaQuery.of(context).size.height * maxHeightFactor;
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(child: child),
+      ),
+    );
+  }
+
   void _showSettingsDialog() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Handle bar
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey,
-                  borderRadius: BorderRadius.circular(2),
+        return _buildResponsiveSheet(
+          context: context,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              // Settings title
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Settings',
-                    style: GoogleFonts.lato(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                // Settings title
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Settings',
+                      style: GoogleFonts.lato(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const Divider(color: Colors.grey),
-              // Playback Speed option
-              ListTile(
-                leading: const Icon(Icons.speed_rounded, color: Colors.white),
-                title: Text(
-                  'Playback Speed',
-                  style: GoogleFonts.lato(color: Colors.white),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${_playbackSpeed}x',
-                      style: GoogleFonts.lato(color: Colors.grey, fontSize: 14),
-                    ),
-                    const Icon(Icons.chevron_right_rounded, color: Colors.grey),
-                  ],
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showSpeedDialog();
-                },
-              ),
-              // Audio Track option (placeholder)
-              ListTile(
-                leading: const Icon(
-                  Icons.audiotrack_rounded,
-                  color: Colors.white,
-                ),
-                title: Text(
-                  'Audio Track',
-                  style: GoogleFonts.lato(color: Colors.white),
-                ),
-                subtitle: Text(
-                  _audioTracks[_selectedAudioTrack],
-                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Colors.grey,
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAudioTrackDialog();
-                },
-              ),
-              // Audio Delay option
-              ListTile(
-                leading: const Icon(Icons.timer_outlined, color: Colors.white),
-                title: Text(
-                  'Audio Delay',
-                  style: GoogleFonts.lato(color: Colors.white),
-                ),
-                subtitle: Text(
-                  '${_audioDelayMs.toStringAsFixed(0)} ms',
-                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Colors.grey,
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAudioDelayDialog();
-                },
-              ),
-              // Subtitles toggle
-              SwitchListTile(
-                value: _subtitlesEnabled,
-                secondary: const Icon(
-                  Icons.subtitles_rounded,
-                  color: Colors.white,
-                ),
-                title: Text(
-                  'Subtitles',
-                  style: GoogleFonts.lato(color: Colors.white),
-                ),
-                subtitle: Text(
-                  _subtitleFileName != null
-                      ? (_subtitlesEnabled
-                            ? 'Enabled • $_subtitleFileName'
-                            : 'Loaded • Disabled')
-                      : (_subtitlesEnabled
-                            ? 'Enabled (no subtitle file loaded)'
-                            : 'Disabled'),
-                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
-                ),
-                onChanged: (v) {
-                  setState(() {
-                    _subtitlesEnabled = v;
-                    _activeSubtitleText = _resolveCurrentSubtitle(
-                      _controller.value.position,
-                    );
-                  });
-                  _appSettings.subtitlesEnabled = v;
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.upload_file_rounded,
-                  color: Colors.white,
-                ),
-                title: Text(
-                  'Load Subtitle File',
-                  style: GoogleFonts.lato(color: Colors.white),
-                ),
-                subtitle: Text(
-                  _subtitleFileName ?? 'Choose .srt or .vtt',
-                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Colors.grey,
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _pickSubtitleFile();
-                },
-              ),
-              if (_subtitleFileName != null)
+                const Divider(color: Colors.grey),
+                // Playback Speed option
                 ListTile(
-                  leading: const Icon(
-                    Icons.delete_outline,
-                    color: Colors.white,
-                  ),
+                  leading: const Icon(Icons.speed_rounded, color: Colors.white),
                   title: Text(
-                    'Clear Subtitles',
+                    'Playback Speed',
                     style: GoogleFonts.lato(color: Colors.white),
                   ),
-                  subtitle: Text(
-                    _subtitleFileName!,
-                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${_playbackSpeed}x',
+                        style: GoogleFonts.lato(
+                          color: Colors.grey,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.grey,
+                      ),
+                    ],
                   ),
                   onTap: () {
                     Navigator.pop(context);
-                    _clearSubtitles();
+                    _showSpeedDialog();
                   },
                 ),
-              // Subtitle Offset option
-              ListTile(
-                leading: const Icon(Icons.tune_rounded, color: Colors.white),
-                title: Text(
-                  'Subtitle Offset',
-                  style: GoogleFonts.lato(color: Colors.white),
+                // Audio Track option (placeholder)
+                ListTile(
+                  leading: const Icon(
+                    Icons.audiotrack_rounded,
+                    color: Colors.white,
+                  ),
+                  title: Text(
+                    'Audio Track',
+                    style: GoogleFonts.lato(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    _audioTracks[_selectedAudioTrack],
+                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.grey,
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showAudioTrackDialog();
+                  },
                 ),
-                subtitle: Text(
-                  '${_subtitleOffsetSeconds.toStringAsFixed(2)} s',
-                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                // Audio Delay option
+                ListTile(
+                  leading: const Icon(
+                    Icons.timer_outlined,
+                    color: Colors.white,
+                  ),
+                  title: Text(
+                    'Audio Delay',
+                    style: GoogleFonts.lato(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    '${_audioDelayMs.toStringAsFixed(0)} ms',
+                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.grey,
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showAudioDelayDialog();
+                  },
                 ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Colors.grey,
+                // Subtitles toggle
+                SwitchListTile(
+                  value: _subtitlesEnabled,
+                  secondary: const Icon(
+                    Icons.subtitles_rounded,
+                    color: Colors.white,
+                  ),
+                  title: Text(
+                    'Subtitles',
+                    style: GoogleFonts.lato(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    _subtitleFileName != null
+                        ? (_subtitlesEnabled
+                              ? 'Enabled • $_subtitleFileName'
+                              : 'Loaded • Disabled')
+                        : (_subtitlesEnabled
+                              ? 'Enabled (no subtitle file loaded)'
+                              : 'Disabled'),
+                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                  ),
+                  onChanged: (v) {
+                    setState(() {
+                      _subtitlesEnabled = v;
+                      _activeSubtitleText = _resolveCurrentSubtitle(
+                        _controller.value.position,
+                      );
+                    });
+                    _appSettings.subtitlesEnabled = v;
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showSubtitleOffsetDialog();
-                },
-              ),
-              // Video Info option
-              ListTile(
-                leading: const Icon(
-                  Icons.info_outline_rounded,
-                  color: Colors.white,
+                ListTile(
+                  leading: const Icon(
+                    Icons.upload_file_rounded,
+                    color: Colors.white,
+                  ),
+                  title: Text(
+                    'Load Subtitle File',
+                    style: GoogleFonts.lato(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    _subtitleFileName ?? 'Choose .srt or .vtt',
+                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.grey,
+                  ),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _pickSubtitleFile();
+                  },
                 ),
-                title: Text(
-                  'Video Info',
-                  style: GoogleFonts.lato(color: Colors.white),
+                if (_subtitleFileName != null)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.white,
+                    ),
+                    title: Text(
+                      'Clear Subtitles',
+                      style: GoogleFonts.lato(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      _subtitleFileName!,
+                      style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _clearSubtitles();
+                    },
+                  ),
+                // Subtitle Offset option
+                ListTile(
+                  leading: const Icon(Icons.tune_rounded, color: Colors.white),
+                  title: Text(
+                    'Subtitle Offset',
+                    style: GoogleFonts.lato(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    '${_subtitleOffsetSeconds.toStringAsFixed(2)} s',
+                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.grey,
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showSubtitleOffsetDialog();
+                  },
                 ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Colors.grey,
+                // Video Info option
+                ListTile(
+                  leading: const Icon(
+                    Icons.info_outline_rounded,
+                    color: Colors.white,
+                  ),
+                  title: Text(
+                    'Video Info',
+                    style: GoogleFonts.lato(color: Colors.white),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.grey,
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showVideoInfoDialog();
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showVideoInfoDialog();
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         );
       },
@@ -1590,14 +1676,16 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   void _showSpeedDialog() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: SingleChildScrollView(
+        return _buildResponsiveSheet(
+          context: context,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1831,88 +1919,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   void _showAudioTrackDialog() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.black87,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showSettingsDialog();
-                    },
-                    child: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Text(
-                    'Audio Track',
-                    style: GoogleFonts.lato(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(color: Colors.grey),
-            ..._audioTracks.asMap().entries.map((e) {
-              final idx = e.key;
-              final name = e.value;
-              final selected = idx == _selectedAudioTrack;
-              return ListTile(
-                title: Text(
-                  name,
-                  style: GoogleFonts.lato(
-                    color: selected ? Colors.red : Colors.white,
-                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-                trailing: selected
-                    ? const Icon(Icons.check_circle_rounded, color: Colors.red)
-                    : null,
-                onTap: () {
-                  setState(() => _selectedAudioTrack = idx);
-                  Navigator.pop(context);
-                  _showSettingsDialog();
-                },
-              );
-            }),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showAudioDelayDialog() {
-    double tempDelay = _audioDelayMs;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
+      builder: (context) => _buildResponsiveSheet(
+        context: context,
+        child: Container(
           decoration: const BoxDecoration(
             color: Colors.black87,
             borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -1949,7 +1960,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                     ),
                     const SizedBox(width: 16),
                     Text(
-                      'Audio Delay',
+                      'Audio Track',
                       style: GoogleFonts.lato(
                         color: Colors.white,
                         fontSize: 20,
@@ -1960,61 +1971,157 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 ),
               ),
               const Divider(color: Colors.grey),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Delay (ms)',
-                      style: GoogleFonts.lato(color: Colors.grey, fontSize: 12),
+              ..._audioTracks.asMap().entries.map((e) {
+                final idx = e.key;
+                final name = e.value;
+                final selected = idx == _selectedAudioTrack;
+                return ListTile(
+                  title: Text(
+                    name,
+                    style: GoogleFonts.lato(
+                      color: selected ? Colors.red : Colors.white,
+                      fontWeight: selected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
-                    Slider(
-                      value: tempDelay,
-                      min: -1000,
-                      max: 1000,
-                      divisions: 40,
-                      label: '${tempDelay.round()} ms',
-                      onChanged: (v) => setModalState(() => tempDelay = v),
-                    ),
-                    Text(
-                      '${tempDelay.round()} ms',
-                      style: GoogleFonts.lato(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _showSettingsDialog();
-                          },
-                          child: Text('Cancel', style: GoogleFonts.lato()),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() => _audioDelayMs = tempDelay);
-                            Navigator.pop(context);
-                            _showSettingsDialog();
-                          },
-                          child: Text(
-                            'Save',
-                            style: GoogleFonts.lato(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+                  ),
+                  trailing: selected
+                      ? const Icon(
+                          Icons.check_circle_rounded,
+                          color: Colors.red,
+                        )
+                      : null,
+                  onTap: () {
+                    setState(() => _selectedAudioTrack = idx);
+                    Navigator.pop(context);
+                    _showSettingsDialog();
+                  },
+                );
+              }),
               const SizedBox(height: 12),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAudioDelayDialog() {
+    double tempDelay = _audioDelayMs;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => _buildResponsiveSheet(
+          context: context,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showSettingsDialog();
+                        },
+                        child: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        'Audio Delay',
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(color: Colors.grey),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Delay (ms)',
+                        style: GoogleFonts.lato(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Slider(
+                        value: tempDelay,
+                        min: -1000,
+                        max: 1000,
+                        divisions: 40,
+                        label: '${tempDelay.round()} ms',
+                        onChanged: (v) => setModalState(() => tempDelay = v),
+                      ),
+                      Text(
+                        '${tempDelay.round()} ms',
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _showSettingsDialog();
+                            },
+                            child: Text('Cancel', style: GoogleFonts.lato()),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() => _audioDelayMs = tempDelay);
+                              Navigator.pop(context);
+                              _showSettingsDialog();
+                            },
+                            child: Text(
+                              'Save',
+                              style: GoogleFonts.lato(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         ),
       ),
@@ -2025,117 +2132,124 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     double tempOffset = _subtitleOffsetSeconds;
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey,
-                  borderRadius: BorderRadius.circular(2),
+        builder: (context, setModalState) => _buildResponsiveSheet(
+          context: context,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showSettingsDialog();
-                      },
-                      child: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(
-                      'Subtitle Offset',
-                      style: GoogleFonts.lato(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(color: Colors.grey),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Offset (seconds)',
-                      style: GoogleFonts.lato(color: Colors.grey, fontSize: 12),
-                    ),
-                    Slider(
-                      value: tempOffset,
-                      min: -5,
-                      max: 5,
-                      divisions: 40,
-                      label: '${tempOffset.toStringAsFixed(2)} s',
-                      onChanged: (v) => setModalState(() => tempOffset = v),
-                    ),
-                    Text(
-                      '${tempOffset.toStringAsFixed(2)} s',
-                      style: GoogleFonts.lato(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _showSettingsDialog();
-                          },
-                          child: Text('Cancel', style: GoogleFonts.lato()),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showSettingsDialog();
+                        },
+                        child: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white,
+                          size: 20,
                         ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _subtitleOffsetSeconds = tempOffset;
-                              _activeSubtitleText = _resolveCurrentSubtitle(
-                                _controller.value.position,
-                              );
-                            });
-                            _appSettings.subtitleOffsetSeconds = tempOffset;
-                            Navigator.pop(context);
-                            _showSettingsDialog();
-                          },
-                          child: Text(
-                            'Save',
-                            style: GoogleFonts.lato(
-                              fontWeight: FontWeight.bold,
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        'Subtitle Offset',
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(color: Colors.grey),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Offset (seconds)',
+                        style: GoogleFonts.lato(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Slider(
+                        value: tempOffset,
+                        min: -5,
+                        max: 5,
+                        divisions: 40,
+                        label: '${tempOffset.toStringAsFixed(2)} s',
+                        onChanged: (v) => setModalState(() => tempOffset = v),
+                      ),
+                      Text(
+                        '${tempOffset.toStringAsFixed(2)} s',
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _showSettingsDialog();
+                            },
+                            child: Text('Cancel', style: GoogleFonts.lato()),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _subtitleOffsetSeconds = tempOffset;
+                                _activeSubtitleText = _resolveCurrentSubtitle(
+                                  _controller.value.position,
+                                );
+                              });
+                              _appSettings.subtitleOffsetSeconds = tempOffset;
+                              Navigator.pop(context);
+                              _showSettingsDialog();
+                            },
+                            child: Text(
+                              'Save',
+                              style: GoogleFonts.lato(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-            ],
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         ),
       ),

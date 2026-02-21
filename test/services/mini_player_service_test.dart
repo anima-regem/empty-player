@@ -7,6 +7,7 @@ void main() {
 
     setUp(() {
       service = MiniPlayerService();
+      service.clearController();
     });
 
     test('is a singleton', () {
@@ -22,6 +23,8 @@ void main() {
       expect(service.videoTitle, null);
       expect(service.videoUrl, null);
       expect(service.isMinimized, false);
+      expect(service.layoutState.isVisible, false);
+      expect(service.layoutState.reservedBottomInset, 0);
     });
 
     test('minimize sets isMinimized to true', () {

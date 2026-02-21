@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:empty_player/models/media_source.dart';
 import 'package:empty_player/pages/video_player.dart';
 import 'package:empty_player/services/url_validation_service.dart';
+import 'package:empty_player/ui/app_theme_tokens.dart';
+import 'package:empty_player/ui/layout_system.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class NetworkStreamPage extends StatefulWidget {
@@ -51,10 +53,11 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = LayoutMetrics.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppThemeTokens.scaffold,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: AppThemeTokens.scaffold,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, size: 22),
@@ -66,13 +69,13 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
           style: GoogleFonts.lato(
             color: Colors.white,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(metrics.horizontalPadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -82,7 +85,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
               Text(
                 'Video URL',
                 style: GoogleFonts.lato(
-                  color: Colors.grey.shade500,
+                  color: AppThemeTokens.textSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -95,11 +98,11 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                 decoration: InputDecoration(
                   hintText: 'https://example.com/video.mp4',
                   hintStyle: GoogleFonts.lato(
-                    color: Colors.grey.shade700,
+                    color: AppThemeTokens.textSecondary,
                     fontSize: 15,
                   ),
                   filled: true,
-                  fillColor: Colors.grey.shade900,
+                  fillColor: AppThemeTokens.surface,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 14,
@@ -117,7 +120,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
               Text(
                 'Title (Optional)',
                 style: GoogleFonts.lato(
-                  color: Colors.grey.shade500,
+                  color: AppThemeTokens.textSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -129,11 +132,11 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                 decoration: InputDecoration(
                   hintText: 'Video title',
                   hintStyle: GoogleFonts.lato(
-                    color: Colors.grey.shade700,
+                    color: AppThemeTokens.textSecondary,
                     fontSize: 15,
                   ),
                   filled: true,
-                  fillColor: Colors.grey.shade900,
+                  fillColor: AppThemeTokens.surface,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 14,
@@ -153,7 +156,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                 child: ElevatedButton(
                   onPressed: _playUrl,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
+                    backgroundColor: AppThemeTokens.accent,
                     foregroundColor: Colors.black,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -176,7 +179,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
               Text(
                 'Sample Videos',
                 style: GoogleFonts.lato(
-                  color: Colors.grey.shade500,
+                  color: AppThemeTokens.textSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -220,7 +223,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                 width: 4,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade800,
+                  color: AppThemeTokens.surfaceAlt,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -236,6 +239,7 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
                 ),
               ),
               Icon(Icons.arrow_forward, color: Colors.grey.shade700, size: 16),
+              const SizedBox(width: 2),
             ],
           ),
         ),
