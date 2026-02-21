@@ -4,6 +4,8 @@ class AppSettingsService {
   static const _keyBackgroundPlayback = 'background_playback_enabled';
   static const _keyPipOnClose = 'pip_on_close_enabled';
   static const _keyDefaultSpeed = 'default_playback_speed';
+  static const _keySubtitleOffset = 'subtitle_offset_seconds';
+  static const _keySubtitlesEnabled = 'subtitles_enabled';
 
   static final AppSettingsService _instance = AppSettingsService._internal();
   factory AppSettingsService() => _instance;
@@ -26,4 +28,13 @@ class AppSettingsService {
   double get defaultPlaybackSpeed => _prefs?.getDouble(_keyDefaultSpeed) ?? 1.0;
   set defaultPlaybackSpeed(double value) =>
       _prefs?.setDouble(_keyDefaultSpeed, value);
+
+  double get subtitleOffsetSeconds =>
+      _prefs?.getDouble(_keySubtitleOffset) ?? 0.0;
+  set subtitleOffsetSeconds(double value) =>
+      _prefs?.setDouble(_keySubtitleOffset, value);
+
+  bool get subtitlesEnabled => _prefs?.getBool(_keySubtitlesEnabled) ?? false;
+  set subtitlesEnabled(bool value) =>
+      _prefs?.setBool(_keySubtitlesEnabled, value);
 }

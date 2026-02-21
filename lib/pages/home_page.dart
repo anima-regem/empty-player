@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:empty_player/models/media_source.dart';
+import 'package:empty_player/models/playback_session.dart';
+import 'package:empty_player/models/playback_state.dart';
 import 'package:empty_player/models/video_item.dart';
 import 'package:empty_player/pages/video_list_page.dart';
 import 'package:empty_player/pages/network_stream_page.dart';
 import 'package:empty_player/pages/video_player.dart';
-import 'package:empty_player/services/video_service.dart';
+import 'package:empty_player/services/library_repository.dart';
+import 'package:empty_player/services/library_preferences_service.dart';
+import 'package:empty_player/services/playback_repository.dart';
 import 'package:empty_player/pages/settings_page.dart';
 import 'package:empty_player/pages/about_page.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -21,8 +26,20 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final DeviceLibraryRepository _libraryRepository =
+      const DeviceLibraryRepository();
+  final LibraryPreferencesService _libraryPreferences =
+      LibraryPreferencesService();
+  final PlaybackRepository _playbackRepository =
+      SharedPrefsPlaybackRepository();
+
   List<VideoFolder> _folders = [];
   List<VideoItem> _allVideos = [];
+  Set<String> _pinnedFolderPaths = <String>{};
+  Set<String> _favoriteMediaIds = <String>{};
+  PlaybackState? _lastPlayed;
+  String _searchQuery = '';
+  LibrarySortOption _sortOption = LibrarySortOption.nameAsc;
   bool _isLoading = true;
   bool _permissionDenied = false;
 
@@ -30,7 +47,29 @@ class _HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _initializePreferences();
     _loadVideos();
+  }
+
+  Future<void> _initializePreferences() async {
+    final pinned = await _libraryPreferences.getPinnedFolders();
+    final sort = await _libraryPreferences.getSortOption();
+    final lastPlayed = await _playbackRepository.getLastPlayed();
+    final favoriteIds = await _playbackRepository.getFavorites();
+
+    if (!mounted) return;
+    setState(() {
+      _pinnedFolderPaths = pinned;
+      _sortOption = sort;
+      _lastPlayed = lastPlayed;
+      _favoriteMediaIds = favoriteIds;
+      _allVideos = _allVideos
+          .map(
+            (video) =>
+                video.copyWith(isFavorite: favoriteIds.contains(video.id)),
+          )
+          .toList();
+    });
   }
 
   Future<void> _loadVideos() async {
@@ -41,11 +80,11 @@ class _HomePageState extends State<HomePage>
 
     try {
       // Check permission first
-      final hasPermission = await VideoService.checkPermission();
+      final hasPermission = await _libraryRepository.hasLibraryPermission();
 
       if (!hasPermission) {
         // Try to request permission
-        final status = await VideoService.requestPermission();
+        final status = await _libraryRepository.requestLibraryPermission();
 
         if (!status.isGranted) {
           if (mounted) {
@@ -64,12 +103,27 @@ class _HomePageState extends State<HomePage>
       }
 
       // If we have permission, load videos
-      final result = await VideoService.getAllVideos();
+      final result = await _libraryRepository.getAllVideos();
+      final playbackStates = await _playbackRepository.getRecentStates(
+        limit: 5000,
+      );
+      final playbackBySource = <String, PlaybackState>{
+        for (final state in playbackStates) state.sourceInput: state,
+      };
 
       if (mounted) {
         setState(() {
-          _folders = result['folders'] as List<VideoFolder>;
-          _allVideos = result['videos'] as List<VideoItem>;
+          _folders = (result['folders'] as List<VideoFolder>).toList();
+          _allVideos = (result['videos'] as List<VideoItem>)
+              .map(
+                (video) => video.copyWith(
+                  lastPositionMs: playbackBySource[video.path]?.positionMs,
+                  lastPlayedAt: playbackBySource[video.path]?.updatedAt,
+                  playCount: playbackBySource[video.path]?.playCount ?? 0,
+                  isFavorite: _favoriteMediaIds.contains(video.id),
+                ),
+              )
+              .toList();
           _isLoading = false;
           _permissionDenied = false;
         });
@@ -124,6 +178,139 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  List<VideoItem> get _visibleVideos {
+    final query = _searchQuery.trim().toLowerCase();
+    final filtered = _allVideos.where((video) {
+      if (query.isEmpty) return true;
+      return video.name.toLowerCase().contains(query);
+    }).toList();
+
+    filtered.sort((a, b) {
+      switch (_sortOption) {
+        case LibrarySortOption.nameAsc:
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        case LibrarySortOption.nameDesc:
+          return b.name.toLowerCase().compareTo(a.name.toLowerCase());
+        case LibrarySortOption.dateModifiedDesc:
+          final aDate =
+              a.lastPlayedAt ??
+              a.dateModified ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate =
+              b.lastPlayedAt ??
+              b.dateModified ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        case LibrarySortOption.sizeDesc:
+          return (b.size ?? 0).compareTo(a.size ?? 0);
+        case LibrarySortOption.durationDesc:
+          return (b.duration ?? Duration.zero).compareTo(
+            a.duration ?? Duration.zero,
+          );
+      }
+    });
+
+    return filtered;
+  }
+
+  List<VideoFolder> get _visibleFolders {
+    final query = _searchQuery.trim().toLowerCase();
+    final filtered = _folders.where((folder) {
+      if (query.isEmpty) return true;
+      if (folder.name.toLowerCase().contains(query)) return true;
+      return folder.videos.any((v) => v.name.toLowerCase().contains(query));
+    }).toList();
+
+    filtered.sort((a, b) {
+      final aPinned = _pinnedFolderPaths.contains(a.path);
+      final bPinned = _pinnedFolderPaths.contains(b.path);
+      if (aPinned != bPinned) {
+        return aPinned ? -1 : 1;
+      }
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return filtered;
+  }
+
+  String _sortLabel(LibrarySortOption option) {
+    switch (option) {
+      case LibrarySortOption.nameAsc:
+        return 'Name (A-Z)';
+      case LibrarySortOption.nameDesc:
+        return 'Name (Z-A)';
+      case LibrarySortOption.dateModifiedDesc:
+        return 'Recent';
+      case LibrarySortOption.sizeDesc:
+        return 'Size';
+      case LibrarySortOption.durationDesc:
+        return 'Duration';
+    }
+  }
+
+  Future<void> _setSortOption(LibrarySortOption option) async {
+    setState(() {
+      _sortOption = option;
+    });
+    await _libraryPreferences.setSortOption(option);
+  }
+
+  Future<void> _togglePinnedFolder(VideoFolder folder) async {
+    await _libraryPreferences.togglePinnedFolder(folder.path);
+    final pinned = await _libraryPreferences.getPinnedFolders();
+    if (!mounted) return;
+    setState(() {
+      _pinnedFolderPaths = pinned;
+    });
+  }
+
+  Future<void> _toggleFavorite(VideoItem video) async {
+    final willBeFavorite = !_favoriteMediaIds.contains(video.id);
+    await _playbackRepository.setFavorite(video.id, willBeFavorite);
+    final favorites = await _playbackRepository.getFavorites();
+    if (!mounted) return;
+
+    setState(() {
+      _favoriteMediaIds = favorites;
+      _allVideos = _allVideos
+          .map(
+            (v) =>
+                v.id == video.id ? v.copyWith(isFavorite: willBeFavorite) : v,
+          )
+          .toList();
+    });
+  }
+
+  Future<void> _openLastPlayed() async {
+    final lastPlayed = _lastPlayed;
+    if (lastPlayed == null) return;
+
+    try {
+      final source = MediaSource.fromInput(lastPlayed.sourceInput);
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VideoApp(
+            source: source,
+            title: lastPlayed.title,
+            start: PlaybackStart(position: lastPlayed.position),
+          ),
+        ),
+      );
+      final refreshed = await _playbackRepository.getLastPlayed();
+      if (mounted) {
+        setState(() {
+          _lastPlayed = refreshed;
+        });
+      }
+    } on FormatException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the last played source.')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -142,6 +329,12 @@ class _HomePageState extends State<HomePage>
                 _buildHeader(),
                 const SizedBox(height: 8),
                 _buildTabs(),
+                const SizedBox(height: 12),
+                _buildSearchAndSortBar(),
+                if (_lastPlayed != null) ...[
+                  const SizedBox(height: 8),
+                  _buildContinueWatchingCard(),
+                ],
                 const SizedBox(height: 16),
                 Expanded(
                   child: _isLoading
@@ -236,8 +429,9 @@ class _HomePageState extends State<HomePage>
           IconButton(
             onPressed: () async {
               // Clear cache and reload
-              await VideoService.clearCache();
+              await _libraryRepository.clearCache();
               await _loadVideos();
+              await _initializePreferences();
             },
             icon: const Icon(Icons.refresh_rounded, size: 22),
             color: Colors.grey.shade500,
@@ -302,16 +496,141 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  Widget _buildSearchAndSortBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              onChanged: (value) => setState(() => _searchQuery = value),
+              style: GoogleFonts.lato(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Search videos or folders',
+                hintStyle: GoogleFonts.lato(color: Colors.grey.shade600),
+                prefixIcon: Icon(Icons.search, color: Colors.grey.shade500),
+                filled: true,
+                fillColor: Colors.grey.shade900,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          PopupMenuButton<LibrarySortOption>(
+            initialValue: _sortOption,
+            onSelected: _setSortOption,
+            color: Colors.grey.shade900,
+            itemBuilder: (context) => LibrarySortOption.values
+                .map(
+                  (option) => PopupMenuItem<LibrarySortOption>(
+                    value: option,
+                    child: Text(
+                      _sortLabel(option),
+                      style: GoogleFonts.lato(color: Colors.white),
+                    ),
+                  ),
+                )
+                .toList(),
+            child: Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade900,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.sort_rounded, color: Colors.white, size: 18),
+                  const SizedBox(width: 6),
+                  Text(
+                    _sortLabel(_sortOption),
+                    style: GoogleFonts.lato(color: Colors.white, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContinueWatchingCard() {
+    final lastPlayed = _lastPlayed;
+    if (lastPlayed == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: _openLastPlayed,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade900,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.play_circle_fill_rounded, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Continue watching',
+                        style: GoogleFonts.lato(
+                          color: Colors.grey.shade500,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        lastPlayed.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  _formatDuration(lastPlayed.position),
+                  style: GoogleFonts.lato(
+                    color: Colors.grey.shade500,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFoldersView() {
-    if (_folders.isEmpty) {
+    final folders = _visibleFolders;
+    if (folders.isEmpty) {
       return _buildEmptyState();
     }
 
     return ListView.builder(
       padding: const EdgeInsets.only(top: 8),
-      itemCount: _folders.length,
+      itemCount: folders.length,
       itemBuilder: (context, index) {
-        final folder = _folders[index];
+        final folder = folders[index];
         return _buildFolderCard(folder);
       },
     );
@@ -371,6 +690,18 @@ class _HomePageState extends State<HomePage>
                   ],
                 ),
               ),
+              IconButton(
+                onPressed: () => _togglePinnedFolder(folder),
+                icon: Icon(
+                  _pinnedFolderPaths.contains(folder.path)
+                      ? Icons.push_pin
+                      : Icons.push_pin_outlined,
+                  color: _pinnedFolderPaths.contains(folder.path)
+                      ? Colors.white
+                      : Colors.grey.shade700,
+                  size: 18,
+                ),
+              ),
               Icon(Icons.chevron_right, color: Colors.grey.shade700, size: 20),
             ],
           ),
@@ -380,7 +711,8 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildAllVideosView() {
-    if (_allVideos.isEmpty) {
+    final videos = _visibleVideos;
+    if (videos.isEmpty) {
       return _buildEmptyState();
     }
 
@@ -392,9 +724,9 @@ class _HomePageState extends State<HomePage>
         mainAxisSpacing: 20,
         childAspectRatio: 0.7,
       ),
-      itemCount: _allVideos.length,
+      itemCount: videos.length,
       itemBuilder: (context, index) {
-        final video = _allVideos[index];
+        final video = videos[index];
         return _buildVideoCard(video);
       },
     );
@@ -498,10 +830,23 @@ class _HomePageState extends State<HomePage>
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  VideoApp(videoUrl: video.path, videoTitle: video.name),
+              builder: (context) => VideoApp(
+                source: MediaSource.fromInput(video.path),
+                title: video.name,
+                start: video.lastPositionMs != null
+                    ? PlaybackStart(
+                        position: Duration(milliseconds: video.lastPositionMs!),
+                      )
+                    : null,
+              ),
             ),
           );
+          final refreshed = await _playbackRepository.getLastPlayed();
+          if (mounted) {
+            setState(() {
+              _lastPlayed = refreshed;
+            });
+          }
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -513,6 +858,29 @@ class _HomePageState extends State<HomePage>
                     decoration: BoxDecoration(
                       color: Colors.grey.shade900,
                       borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  Positioned(
+                    left: 6,
+                    top: 6,
+                    child: GestureDetector(
+                      onTap: () => _toggleFavorite(video),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Icon(
+                          _favoriteMediaIds.contains(video.id)
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color: _favoriteMediaIds.contains(video.id)
+                              ? Colors.redAccent
+                              : Colors.white,
+                          size: 14,
+                        ),
+                      ),
                     ),
                   ),
                   if (video.duration != null)
@@ -560,6 +928,19 @@ class _HomePageState extends State<HomePage>
                   color: Colors.grey.shade600,
                   fontSize: 11,
                   fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+            if (video.lastPositionMs != null &&
+                video.duration != null &&
+                video.lastPositionMs! > 0) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Resume ${_formatDuration(Duration(milliseconds: video.lastPositionMs!))}',
+                style: GoogleFonts.lato(
+                  color: Colors.grey.shade500,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],

@@ -1,5 +1,6 @@
 import 'package:empty_player/pages/home_page.dart';
 import 'package:empty_player/pages/video_player.dart';
+import 'package:empty_player/models/media_source.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
@@ -43,11 +44,16 @@ class _VideoFrameState extends State<VideoFrame> {
     final lastSegment = Uri.parse(uri).pathSegments.isNotEmpty
         ? Uri.parse(uri).pathSegments.last
         : 'Video';
-    _navKey.currentState?.push(
-      MaterialPageRoute(
-        builder: (_) => VideoApp(videoUrl: uri, videoTitle: lastSegment),
-      ),
-    );
+    try {
+      final source = MediaSource.fromInput(uri);
+      _navKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => VideoApp(source: source, title: lastSegment),
+        ),
+      );
+    } on FormatException {
+      // Ignore unsupported intent URIs.
+    }
   }
 
   @override

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:empty_player/models/media_source.dart';
+import 'package:empty_player/models/playback_session.dart';
 import 'package:empty_player/models/video_item.dart';
 import 'package:empty_player/pages/video_player.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -61,8 +63,15 @@ class VideoListPage extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  VideoApp(videoUrl: video.path, videoTitle: video.name),
+              builder: (context) => VideoApp(
+                source: MediaSource.fromInput(video.path),
+                title: video.name,
+                start: video.lastPositionMs != null
+                    ? PlaybackStart(
+                        position: Duration(milliseconds: video.lastPositionMs!),
+                      )
+                    : null,
+              ),
             ),
           );
         },

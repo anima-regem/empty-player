@@ -35,12 +35,38 @@ class VideoService {
     '.m2ts',
   ];
 
+  static const Map<String, String> _mimeByExtension = {
+    '.mp4': 'video/mp4',
+    '.mkv': 'video/x-matroska',
+    '.avi': 'video/x-msvideo',
+    '.mov': 'video/quicktime',
+    '.wmv': 'video/x-ms-wmv',
+    '.flv': 'video/x-flv',
+    '.webm': 'video/webm',
+    '.m4v': 'video/x-m4v',
+    '.3gp': 'video/3gpp',
+    '.3g2': 'video/3gpp2',
+    '.mpg': 'video/mpeg',
+    '.mpeg': 'video/mpeg',
+    '.m2v': 'video/mpeg',
+    '.m4p': 'video/mp4',
+    '.ogv': 'video/ogg',
+    '.ts': 'video/mp2t',
+    '.mts': 'video/mp2t',
+    '.m2ts': 'video/mp2t',
+  };
+
   /// Check if a file path has a valid video extension.
   /// Returns false if the file path is null or empty.
   static bool _isValidVideoFile(String filePath) {
     if (filePath.isEmpty) return false;
     final extension = path.extension(filePath).toLowerCase();
     return _validVideoExtensions.contains(extension);
+  }
+
+  static String? _inferMimeType(String filePath) {
+    final extension = path.extension(filePath).toLowerCase();
+    return _mimeByExtension[extension];
   }
 
   /// Check if we have storage permissions
@@ -221,9 +247,11 @@ class VideoService {
 
             allVideos.add(
               VideoItem(
+                id: asset.id,
                 name: asset.title ?? path.basename(file.path),
                 path: file.path,
                 thumbnail: null,
+                mimeType: _inferMimeType(file.path),
                 duration: Duration(seconds: asset.duration),
                 size: await file.length(),
                 dateModified: asset.modifiedDateTime,

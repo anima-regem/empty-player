@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:empty_player/models/media_source.dart';
 import 'package:empty_player/pages/video_player.dart';
+import 'package:empty_player/services/url_validation_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class NetworkStreamPage extends StatefulWidget {
@@ -21,10 +23,13 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
   }
 
   void _playUrl() {
-    if (_urlController.text.trim().isEmpty) {
+    final validation = UrlValidationService.validateNetworkUrl(
+      _urlController.text.trim(),
+    );
+    if (!validation.isValid || validation.uri == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid URL'),
+        SnackBar(
+          content: Text(validation.error ?? 'Please enter a valid URL'),
           backgroundColor: Colors.red,
         ),
       );
@@ -35,9 +40,9 @@ class _NetworkStreamPageState extends State<NetworkStreamPage> {
       context,
       MaterialPageRoute(
         builder: (context) => VideoApp(
-          videoUrl: _urlController.text.trim(),
-          videoTitle: _titleController.text.trim().isEmpty
-              ? 'Network Stream'
+          source: MediaSource.fromInput(validation.uri.toString()),
+          title: _titleController.text.trim().isEmpty
+              ? validation.uri!.host
               : _titleController.text.trim(),
         ),
       ),

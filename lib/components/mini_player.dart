@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:empty_player/models/playback_session.dart';
 import 'package:empty_player/services/mini_player_service.dart';
 import 'package:empty_player/pages/video_player.dart';
 
@@ -32,14 +33,16 @@ class _MiniPlayerState extends State<MiniPlayer> {
   }
 
   void _openFullPlayer() {
-    if (_miniPlayerService.videoUrl != null) {
+    final session = _miniPlayerService.session;
+    if (session != null) {
       _miniPlayerService.maximize();
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => VideoApp(
-            videoUrl: _miniPlayerService.videoUrl!,
-            videoTitle: _miniPlayerService.videoTitle,
+            source: session.source,
+            title: session.title,
+            start: PlaybackStart(position: session.position),
           ),
         ),
       );
@@ -64,6 +67,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
     }
 
     final controller = _miniPlayerService.controller!;
+    final session = _miniPlayerService.session!;
 
     return GestureDetector(
       onTap: _openFullPlayer,
@@ -107,7 +111,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      _miniPlayerService.videoTitle ?? 'Audio Playing',
+                      session.title,
                       style: GoogleFonts.lato(
                         color: Colors.white,
                         fontSize: 14,

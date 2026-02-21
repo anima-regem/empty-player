@@ -1,27 +1,43 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:video_player/video_player.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path/path.dart' as path;
+import 'package:empty_player/models/media_source.dart';
+import 'package:empty_player/models/playback_session.dart';
+import 'package:empty_player/models/playback_state.dart';
+import 'package:empty_player/models/subtitle_cue.dart';
 import 'package:empty_player/services/app_settings_service.dart';
 import 'package:empty_player/services/mini_player_service.dart';
+import 'package:empty_player/services/playback_repository.dart';
+import 'package:empty_player/services/playback_controller_adapter.dart';
+import 'package:empty_player/services/player_engine.dart';
+import 'package:empty_player/services/player_close_policy.dart';
+import 'package:empty_player/services/subtitle_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:empty_player/components/loading_animation.dart';
 
 class VideoApp extends StatefulWidget {
-  final String videoUrl;
-  final String? videoTitle;
+  final MediaSource source;
+  final String title;
+  final PlaybackStart? start;
 
-  const VideoApp({super.key, required this.videoUrl, this.videoTitle});
+  const VideoApp({
+    super.key,
+    required this.source,
+    required this.title,
+    this.start,
+  });
 
   @override
   State<VideoApp> createState() => _VideoAppState();
 }
 
 class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
-  late VideoPlayerController _controller;
+  late PlaybackControllerAdapter _controller;
   bool _showControls = true;
   Timer? _hideTimer;
   bool _isFullScreen = false;
@@ -58,19 +74,34 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   String _videoResolution = "";
   String _videoDuration = "";
 
-  String get _videoTitle => widget.videoTitle ?? 'Video Player';
-  String get _videoUrl => widget.videoUrl;
+  String get _videoTitle => widget.title;
+  MediaSource get _source => widget.source;
+  String get _sourceId => _source.toStorageKey();
+  String get _videoUrl => _source.rawInput;
 
   // Global settings service
   final AppSettingsService _appSettings = AppSettingsService();
   final MiniPlayerService _miniPlayerService = MiniPlayerService();
+  final PlaybackRepository _playbackRepository =
+      SharedPrefsPlaybackRepository();
+  final PlayerEngine _playerEngine = const MediaKitPlayerEngine();
+  DateTime _lastStateSavedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _lastSavedPositionMs = 0;
+  bool _hasRestoredStartPosition = false;
+  bool _controllerDisposedExternally = false;
+  bool _sessionPlayCountRecorded = false;
+  Duration _lastUiPosition = Duration.zero;
 
-  // Extended media settings (placeholders)
+  // Extended media settings
   final List<String> _audioTracks = ['Track 1'];
   int _selectedAudioTrack = 0;
   double _audioDelayMs = 0.0; // milliseconds
   bool _subtitlesEnabled = false;
   double _subtitleOffsetSeconds = 0.0; // calibration offset
+  final SubtitleService _subtitleService = const SubtitleService();
+  List<SubtitleCue> _subtitleCues = const <SubtitleCue>[];
+  String? _subtitleFileName;
+  String _activeSubtitleText = '';
 
   @override
   void initState() {
@@ -79,57 +110,29 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
 
     // Check if we're resuming from mini player
     final existingController = _miniPlayerService.controller;
-    final isSameVideo = _miniPlayerService.videoUrl == _videoUrl;
+    final isSameVideo =
+        _miniPlayerService.session?.source.toStorageKey() == _sourceId;
 
     if (existingController != null &&
         isSameVideo &&
         existingController.value.isInitialized) {
       // Reuse existing controller from mini player
       _controller = existingController;
+      _controller.addListener(_onVideoStateChanged);
       setState(() {
         final size = _controller.value.size;
         _videoResolution = '${size.width.toInt()} x ${size.height.toInt()}';
         _videoDuration = _formatDuration(_controller.value.duration);
+        _currentVolume = _controller.value.volume;
         _controller.setPlaybackSpeed(_playbackSpeed);
+        _activeSubtitleText = _resolveCurrentSubtitle(
+          _controller.value.position,
+        );
       });
     } else {
       // Create new controller
-      _controller = VideoPlayerController.networkUrl(Uri.parse(_videoUrl))
-        ..initialize()
-            .then((_) {
-              if (mounted) {
-                setState(() {
-                  // Get video metadata after initialization
-                  final size = _controller.value.size;
-                  _videoResolution =
-                      '${size.width.toInt()} x ${size.height.toInt()}';
-                  _videoDuration = _formatDuration(_controller.value.duration);
-                  // Apply default playback speed from settings once initialized
-                  _controller.setPlaybackSpeed(_playbackSpeed);
-                });
-                // Set to mini player service
-                _miniPlayerService.setController(
-                  _controller,
-                  _videoUrl,
-                  _videoTitle,
-                );
-              }
-            })
-            .catchError((error) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error loading video: $error'),
-                    backgroundColor: Colors.red,
-                    duration: const Duration(seconds: 5),
-                  ),
-                );
-              }
-            });
+      _createController();
     }
-
-    // Only rebuild on specific state changes, not every frame
-    _controller.addListener(_onVideoStateChanged);
 
     // Get initial brightness
     _initBrightness();
@@ -147,10 +150,80 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     platform.setMethodCallHandler(_handlePlatformMethod);
   }
 
+  Future<void> _createController() async {
+    try {
+      _controller = _playerEngine.createController(
+        _source,
+        autoPlay: widget.start?.autoPlay ?? true,
+      );
+      _controller.addListener(_onVideoStateChanged);
+      await _controller.initialize();
+
+      if (!mounted) return;
+      setState(() {
+        final size = _controller.value.size;
+        _videoResolution = '${size.width.toInt()} x ${size.height.toInt()}';
+        _videoDuration = _formatDuration(_controller.value.duration);
+        _currentVolume = _controller.value.volume;
+        _controller.setPlaybackSpeed(_playbackSpeed);
+        _activeSubtitleText = _resolveCurrentSubtitle(
+          _controller.value.position,
+        );
+      });
+
+      await _restorePlaybackPositionIfAvailable();
+
+      _miniPlayerService.setController(
+        _controller,
+        PlaybackSession(
+          sessionId: buildPlaybackSessionId(_source),
+          source: _source,
+          title: _videoTitle,
+          position: _controller.value.position,
+          duration: _controller.value.duration,
+          isPlaying: _controller.value.isPlaying,
+          isMinimized: false,
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading video: $error'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _restorePlaybackPositionIfAvailable() async {
+    if (_hasRestoredStartPosition || !_controller.value.isInitialized) return;
+    _hasRestoredStartPosition = true;
+
+    final savedState = await _playbackRepository.getState(_sourceId);
+    final requestedStart = widget.start?.position;
+    final targetPosition = requestedStart ?? savedState?.position;
+
+    if (targetPosition == null || targetPosition <= Duration.zero) return;
+
+    final duration = _controller.value.duration;
+    final safeTarget = targetPosition > duration
+        ? duration - const Duration(milliseconds: 500)
+        : targetPosition;
+
+    if (safeTarget > Duration.zero) {
+      await _controller.seekTo(safeTarget);
+    }
+  }
+
   Future<void> _initializeSettings() async {
     await _appSettings.init();
     setState(() {
       _playbackSpeed = _appSettings.defaultPlaybackSpeed;
+      _subtitleOffsetSeconds = _appSettings.subtitleOffsetSeconds;
+      _subtitlesEnabled = _appSettings.subtitlesEnabled;
     });
   }
 
@@ -184,16 +257,102 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   void _onVideoStateChanged() {
     if (!mounted) return;
 
-    // Only rebuild if critical state has changed
     final isPlaying = _controller.value.isPlaying;
     final isBuffering = _controller.value.isBuffering;
+    final position = _controller.value.position;
+    final positionMovedEnough =
+        (position.inMilliseconds - _lastUiPosition.inMilliseconds).abs() >= 250;
+    final nextSubtitle = _resolveCurrentSubtitle(position);
+    final subtitleChanged = nextSubtitle != _activeSubtitleText;
 
-    if (isPlaying != _wasPlaying || isBuffering != _wasBuffering) {
+    _miniPlayerService.updatePlaybackSnapshot();
+    _maybePersistPlaybackState();
+
+    if (isPlaying != _wasPlaying ||
+        isBuffering != _wasBuffering ||
+        positionMovedEnough ||
+        subtitleChanged) {
       setState(() {
         _wasPlaying = isPlaying;
         _wasBuffering = isBuffering;
+        if (positionMovedEnough) {
+          _lastUiPosition = position;
+        }
+        if (subtitleChanged) {
+          _activeSubtitleText = nextSubtitle;
+        }
       });
     }
+  }
+
+  String _resolveCurrentSubtitle(Duration position) {
+    if (!_subtitlesEnabled || _subtitleCues.isEmpty) {
+      return '';
+    }
+
+    final adjusted = _subtitleService.applyOffset(
+      position,
+      _subtitleOffsetSeconds,
+    );
+    final cue = _subtitleService.cueAt(_subtitleCues, adjusted);
+    return cue?.text ?? '';
+  }
+
+  Future<void> _pickSubtitleFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['srt', 'vtt'],
+      );
+      if (!mounted || result == null) return;
+
+      final filePath = result.files.single.path;
+      if (filePath == null || filePath.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to access the selected file.')),
+        );
+        return;
+      }
+
+      final cues = await _subtitleService.parseFile(filePath);
+      if (!mounted) return;
+      if (cues.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No subtitle cues found in this file.')),
+        );
+        return;
+      }
+
+      setState(() {
+        _subtitleCues = cues;
+        _subtitleFileName = path.basename(filePath);
+        _subtitlesEnabled = true;
+        _activeSubtitleText = _resolveCurrentSubtitle(
+          _controller.value.position,
+        );
+      });
+      _appSettings.subtitlesEnabled = true;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Loaded ${cues.length} subtitle cues.')),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load subtitles: $error')),
+      );
+    }
+  }
+
+  void _clearSubtitles() {
+    setState(() {
+      _subtitleCues = const <SubtitleCue>[];
+      _subtitleFileName = null;
+      _activeSubtitleText = '';
+      _subtitlesEnabled = false;
+    });
+    _appSettings.subtitlesEnabled = false;
   }
 
   @override
@@ -205,6 +364,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       case AppLifecycleState.inactive:
         // App going to background - save playback state
         _wasPlayingBeforeBackground = _controller.value.isPlaying;
+        unawaited(_persistPlaybackState(force: true));
         // Respect background playback setting
         if (!_appSettings.backgroundPlaybackEnabled) {
           _controller.pause();
@@ -221,12 +381,55 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
 
       case AppLifecycleState.detached:
         // App is being terminated
+        unawaited(_persistPlaybackState(force: true));
         break;
 
       case AppLifecycleState.hidden:
         // App is hidden but still running
         break;
     }
+  }
+
+  void _maybePersistPlaybackState() {
+    if (!_controller.value.isInitialized) return;
+    final positionMs = _controller.value.position.inMilliseconds;
+    final now = DateTime.now();
+    final crossedTimeWindow =
+        now.difference(_lastStateSavedAt) >= const Duration(seconds: 5);
+    final movedEnough = (positionMs - _lastSavedPositionMs).abs() >= 5000;
+
+    if (crossedTimeWindow && movedEnough) {
+      _lastStateSavedAt = now;
+      _lastSavedPositionMs = positionMs;
+      unawaited(_persistPlaybackState());
+    }
+  }
+
+  Future<void> _persistPlaybackState({bool force = false}) async {
+    if (!_controller.value.isInitialized) return;
+    final positionMs = _controller.value.position.inMilliseconds;
+    final durationMs = _controller.value.duration.inMilliseconds;
+
+    if (!force && durationMs > 0 && positionMs <= 0) {
+      return;
+    }
+
+    final existing = await _playbackRepository.getState(_sourceId);
+    final baseCount = existing?.playCount ?? 0;
+    final nextCount = _sessionPlayCountRecorded ? baseCount : baseCount + 1;
+    final state = PlaybackState(
+      mediaId: _sourceId,
+      sourceInput: _source.rawInput,
+      title: _videoTitle,
+      positionMs: positionMs.clamp(0, durationMs),
+      durationMs: durationMs,
+      updatedAt: DateTime.now(),
+      playCount: nextCount,
+    );
+
+    await _playbackRepository.saveState(state);
+    await _playbackRepository.saveLastPlayed(state);
+    _sessionPlayCountRecorded = true;
   }
 
   Future<void> _initBrightness() async {
@@ -245,6 +448,8 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     setState(() {
       _controller.value.isPlaying ? _controller.pause() : _controller.play();
     });
+    _miniPlayerService.updatePlaybackSnapshot();
+    _maybePersistPlaybackState();
     _resetHideTimer();
   }
 
@@ -284,6 +489,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     } else {
       _controller.seekTo(targetPosition);
     }
+    _maybePersistPlaybackState();
     _resetHideTimer();
   }
 
@@ -372,10 +578,11 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _enablePiP() async {
+  Future<bool> _enablePiP() async {
     if (_isPipSupported) {
       try {
-        await platform.invokeMethod('enterPipMode');
+        final entered = await platform.invokeMethod<bool>('enterPipMode');
+        return entered ?? false;
       } catch (e) {
         debugPrint('Error enabling PiP: $e');
         if (mounted) {
@@ -388,13 +595,12 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         }
       }
     }
+    return false;
   }
 
   Future<void> _openExternally() async {
     // Attempt to launch the video via an external application (system intent)
-    final uri = _videoUrl.startsWith('http') || _videoUrl.startsWith('rtsp')
-        ? Uri.parse(_videoUrl)
-        : Uri.file(_videoUrl);
+    final uri = _source.uri;
     try {
       final launched = await launchUrl(
         uri,
@@ -431,6 +637,18 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }
     return '${twoDigits(minutes)}:${twoDigits(seconds)}';
+  }
+
+  PlaybackSession _buildSessionSnapshot({required bool isMinimized}) {
+    return PlaybackSession(
+      sessionId: buildPlaybackSessionId(_source),
+      source: _source,
+      title: _videoTitle,
+      position: _controller.value.position,
+      duration: _controller.value.duration,
+      isPlaying: _controller.value.isPlaying,
+      isMinimized: isMinimized,
+    );
   }
 
   @override
@@ -496,26 +714,41 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         canPop: false,
         onPopInvokedWithResult: (bool didPop, dynamic result) async {
           if (didPop) return;
+          final navigator = Navigator.of(context);
+          await _persistPlaybackState(force: true);
 
-          // If video is playing, minimize to mini player
-          if (_controller.value.isPlaying) {
-            // Save controller to mini player service
+          final closeAction = PlayerClosePolicy.resolve(
+            isPlaying: _controller.value.isPlaying,
+            pipOnCloseEnabled: _appSettings.pipOnCloseEnabled,
+            pipSupported: _isPipSupported,
+          );
+
+          if (closeAction == PlayerCloseAction.close) {
+            if (_miniPlayerService.controller == _controller) {
+              _controllerDisposedExternally = true;
+            }
+            _miniPlayerService.clearController();
+          } else if (closeAction == PlayerCloseAction.enterPip) {
+            final enteredPip = await _enablePiP();
             _miniPlayerService.setController(
               _controller,
-              _videoUrl,
-              _videoTitle,
+              _buildSessionSnapshot(isMinimized: false),
             );
-            _miniPlayerService.minimize();
-            // Pop without disposing controller
-            if (mounted) {
-              Navigator.of(context).pop();
+            if (!enteredPip) {
+              _miniPlayerService.minimize();
+            } else {
+              _miniPlayerService.maximize();
             }
           } else {
-            // If not playing, clear mini player and pop normally
-            _miniPlayerService.clearController();
-            if (mounted) {
-              Navigator.of(context).pop();
-            }
+            _miniPlayerService.setController(
+              _controller,
+              _buildSessionSnapshot(isMinimized: true),
+            );
+            _miniPlayerService.minimize();
+          }
+
+          if (navigator.mounted) {
+            navigator.pop();
           }
         },
         child: GestureDetector(
@@ -577,7 +810,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                 child: Center(
                   child: AspectRatio(
                     aspectRatio: _controller.value.aspectRatio,
-                    child: VideoPlayer(_controller),
+                    child: _controller.buildVideo(),
                   ),
                 ),
               ),
@@ -764,6 +997,40 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                   ),
                 ),
 
+              // External subtitle overlay
+              if (_subtitlesEnabled && _activeSubtitleText.trim().isNotEmpty)
+                Positioned(
+                  left: 20,
+                  right: 20,
+                  bottom: _showControls ? 120 : 36,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: 1.0,
+                      duration: const Duration(milliseconds: 120),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          _activeSubtitleText,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.lato(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
               // Controls Overlay
               if (_showControls)
                 AnimatedOpacity(
@@ -814,7 +1081,7 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
         children: [
           GestureDetector(
             onTap: () {
-              Navigator.pop(context);
+              Navigator.of(context).maybePop();
             },
             child: Container(
               padding: const EdgeInsets.all(8),
@@ -1213,13 +1480,66 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                   style: GoogleFonts.lato(color: Colors.white),
                 ),
                 subtitle: Text(
-                  _subtitlesEnabled ? 'Enabled (no file loaded)' : 'Disabled',
+                  _subtitleFileName != null
+                      ? (_subtitlesEnabled
+                            ? 'Enabled • $_subtitleFileName'
+                            : 'Loaded • Disabled')
+                      : (_subtitlesEnabled
+                            ? 'Enabled (no subtitle file loaded)'
+                            : 'Disabled'),
                   style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
                 ),
                 onChanged: (v) {
-                  setState(() => _subtitlesEnabled = v);
+                  setState(() {
+                    _subtitlesEnabled = v;
+                    _activeSubtitleText = _resolveCurrentSubtitle(
+                      _controller.value.position,
+                    );
+                  });
+                  _appSettings.subtitlesEnabled = v;
                 },
               ),
+              ListTile(
+                leading: const Icon(
+                  Icons.upload_file_rounded,
+                  color: Colors.white,
+                ),
+                title: Text(
+                  'Load Subtitle File',
+                  style: GoogleFonts.lato(color: Colors.white),
+                ),
+                subtitle: Text(
+                  _subtitleFileName ?? 'Choose .srt or .vtt',
+                  style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey,
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickSubtitleFile();
+                },
+              ),
+              if (_subtitleFileName != null)
+                ListTile(
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.white,
+                  ),
+                  title: Text(
+                    'Clear Subtitles',
+                    style: GoogleFonts.lato(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    _subtitleFileName!,
+                    style: GoogleFonts.lato(fontSize: 12, color: Colors.grey),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _clearSubtitles();
+                  },
+                ),
               // Subtitle Offset option
               ListTile(
                 leading: const Icon(Icons.tune_rounded, color: Colors.white),
@@ -1463,7 +1783,14 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                         '${(_currentVolume * 100).toInt()}%',
                       ),
                       const SizedBox(height: 16),
-                      _buildInfoRow('Source', 'Network Stream'),
+                      _buildInfoRow(
+                        'Source',
+                        _source is NetworkMediaSource
+                            ? 'Network Stream'
+                            : _source is ContentMediaSource
+                            ? 'Content URI'
+                            : 'Local File',
+                      ),
                       const SizedBox(height: 16),
                       _buildInfoRow('URL', _videoUrl, isUrl: true),
                     ],
@@ -1785,7 +2112,13 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
                         ),
                         TextButton(
                           onPressed: () {
-                            setState(() => _subtitleOffsetSeconds = tempOffset);
+                            setState(() {
+                              _subtitleOffsetSeconds = tempOffset;
+                              _activeSubtitleText = _resolveCurrentSubtitle(
+                                _controller.value.position,
+                              );
+                            });
+                            _appSettings.subtitleOffsetSeconds = tempOffset;
                             Navigator.pop(context);
                             _showSettingsDialog();
                           },
@@ -1810,21 +2143,21 @@ class _VideoAppState extends State<VideoApp> with WidgetsBindingObserver {
   }
 
   @override
-  @override
   void dispose() {
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
 
+    unawaited(_persistPlaybackState(force: true));
     _controller.removeListener(_onVideoStateChanged);
     _hideTimer?.cancel();
     _volumeIndicatorTimer?.cancel();
     _brightnessIndicatorTimer?.cancel();
     _dragDebounceTimer?.cancel();
 
-    // Only dispose controller if not minimized to mini player
-    if (!_miniPlayerService.isMinimized ||
+    // Only dispose controller if it's not retained by mini player/PiP session.
+    if (!_controllerDisposedExternally &&
         _miniPlayerService.controller != _controller) {
-      _controller.dispose();
+      _controller.disposeController();
     }
 
     // Disable wakelock when leaving
