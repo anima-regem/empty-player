@@ -58,5 +58,53 @@ void main() {
       final stats = await repository.stats();
       expect(stats.chunkCount, 2);
     });
+
+    test('media state and removeMediaNotIn keep index in sync', () async {
+      await repository.upsert([
+        const VideoEmbeddingChunk(
+          mediaId: 'a',
+          frameTsMs: 1000,
+          vector: [1, 0],
+          modelVersion: 'v1',
+        ),
+        const VideoEmbeddingChunk(
+          mediaId: 'b',
+          frameTsMs: 2000,
+          vector: [0, 1],
+          modelVersion: 'v1',
+        ),
+      ]);
+      await repository.upsertMediaIndexState(
+        VectorMediaIndexState(
+          mediaId: 'a',
+          signature: 'sig-a',
+          modelVersion: 'v1',
+          framesPerVideo: 2,
+          frameCount: 2,
+          indexedAt: DateTime.fromMillisecondsSinceEpoch(123),
+        ),
+      );
+      await repository.upsertMediaIndexState(
+        VectorMediaIndexState(
+          mediaId: 'b',
+          signature: 'sig-b',
+          modelVersion: 'v1',
+          framesPerVideo: 2,
+          frameCount: 1,
+          indexedAt: DateTime.fromMillisecondsSinceEpoch(456),
+        ),
+      );
+
+      await repository.removeMediaNotIn({'a'});
+
+      final stateA = await repository.getMediaIndexState('a');
+      final stateB = await repository.getMediaIndexState('b');
+      expect(stateA, isNotNull);
+      expect(stateA!.signature, 'sig-a');
+      expect(stateB, isNull);
+
+      final stats = await repository.stats();
+      expect(stats.mediaCount, 1);
+    });
   });
 }

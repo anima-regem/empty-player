@@ -4,6 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:empty_player/ui/app_theme_tokens.dart';
 import 'package:empty_player/ui/layout_system.dart';
+import 'package:empty_player/models/index_job_state.dart';
+import 'package:empty_player/services/embedding_runtime.dart';
+import 'package:empty_player/services/embedding_index_status_service.dart';
 import '../services/app_settings_service.dart';
 import '../services/update_check_service.dart';
 import '../components/loading_animation.dart';
@@ -17,12 +20,15 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final AppSettingsService _settings = AppSettingsService();
   final UpdateCheckService _updateService = UpdateCheckService();
+  final EmbeddingIndexStatusService _embeddingIndexStatusService =
+      EmbeddingIndexStatusService.instance;
   bool _loading = true;
   bool _checkingUpdate = false;
 
   bool _backgroundPlayback = false;
   bool _pipOnClose = true;
   double _defaultSpeed = 1.0;
+  EmbeddingRuntimeMode _embeddingRuntimeMode = EmbeddingRuntimeMode.auto;
 
   String _currentVersion = '';
   String? _latestVersion;
@@ -37,11 +43,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _load() async {
     await _settings.init();
+    await _embeddingIndexStatusService.ensureInitialized();
     final packageInfo = await PackageInfo.fromPlatform();
     setState(() {
       _backgroundPlayback = _settings.backgroundPlaybackEnabled;
       _pipOnClose = _settings.pipOnCloseEnabled;
       _defaultSpeed = _settings.defaultPlaybackSpeed;
+      _embeddingRuntimeMode = EmbeddingRuntimeMode.fromStorageValue(
+        _settings.embeddingRuntimeMode,
+      );
       _currentVersion = packageInfo.version;
       _loading = false;
     });
@@ -60,6 +70,17 @@ class _SettingsPageState extends State<SettingsPage> {
   void _saveSpeed(double v) {
     setState(() => _defaultSpeed = v);
     _settings.defaultPlaybackSpeed = v;
+  }
+
+  void _saveEmbeddingRuntimeMode(EmbeddingRuntimeMode mode) {
+    setState(() => _embeddingRuntimeMode = mode);
+    _settings.embeddingRuntimeMode = mode.toStorageValue();
+    _embeddingIndexStatusService.requestFullRebuild();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Embedding runtime updated. Full reindex requested.'),
+      ),
+    );
   }
 
   Future<void> _checkForUpdates() async {
@@ -196,6 +217,38 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                 const Divider(),
+                _sectionHeader('Search Index'),
+                ListTile(
+                  title: Text('Embedding Runtime', style: GoogleFonts.lato()),
+                  subtitle: Text(
+                    _embeddingRuntimeDescription(_embeddingRuntimeMode),
+                    style: GoogleFonts.lato(fontSize: 12),
+                  ),
+                  trailing: DropdownButtonHideUnderline(
+                    child: DropdownButton<EmbeddingRuntimeMode>(
+                      value: _embeddingRuntimeMode,
+                      onChanged: (mode) {
+                        if (mode == null || mode == _embeddingRuntimeMode) {
+                          return;
+                        }
+                        _saveEmbeddingRuntimeMode(mode);
+                      },
+                      items: EmbeddingRuntimeMode.values
+                          .map(
+                            (mode) => DropdownMenuItem<EmbeddingRuntimeMode>(
+                              value: mode,
+                              child: Text(
+                                _embeddingRuntimeLabel(mode),
+                                style: GoogleFonts.lato(),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  ),
+                ),
+                _buildEmbeddingIndexProgressCard(),
+                const Divider(),
                 _sectionHeader('Advanced'),
                 ListTile(
                   title: Text('Audio Tracks', style: GoogleFonts.lato()),
@@ -226,6 +279,175 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
     );
+  }
+
+  Widget _buildEmbeddingIndexProgressCard() {
+    return ValueListenableBuilder<IndexJobState>(
+      valueListenable: _embeddingIndexStatusService.state,
+      builder: (context, state, _) {
+        final progress = state.progress.clamp(0.0, 1.0).toDouble();
+        final isRunning = state.status == IndexJobStatus.running;
+        final isCompleted = state.status == IndexJobStatus.completed;
+
+        String headline;
+        Color color = AppThemeTokens.textSecondary;
+        switch (state.status) {
+          case IndexJobStatus.idle:
+            headline = 'Not indexed yet';
+            break;
+          case IndexJobStatus.running:
+            headline = 'Indexing embeddings';
+            color = AppThemeTokens.accent;
+            break;
+          case IndexJobStatus.completed:
+            headline = 'Embedding index ready';
+            color = Colors.green;
+            break;
+          case IndexJobStatus.failed:
+            headline = 'Indexing failed';
+            color = Colors.redAccent;
+            break;
+          case IndexJobStatus.canceled:
+            headline = 'Indexing canceled';
+            color = Colors.orangeAccent;
+            break;
+        }
+
+        final progressLabel = isRunning
+            ? '${(progress * 100).toStringAsFixed(0)}%'
+            : isCompleted
+            ? '100%'
+            : '0%';
+
+        return ValueListenableBuilder<EmbeddingIndexMetadata>(
+          valueListenable: _embeddingIndexStatusService.metadata,
+          builder: (context, metadata, _) {
+            return ListTile(
+              title: Text(
+                'On-device embedding index',
+                style: GoogleFonts.lato(),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      headline,
+                      style: GoogleFonts.lato(fontSize: 12, color: color),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: isRunning
+                            ? progress
+                            : isCompleted
+                            ? 1
+                            : 0,
+                        minHeight: 7,
+                        backgroundColor: AppThemeTokens.surfaceAlt,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isRunning
+                              ? AppThemeTokens.accent
+                              : isCompleted
+                              ? Colors.green
+                              : AppThemeTokens.textSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      progressLabel,
+                      style: GoogleFonts.lato(
+                        fontSize: 12,
+                        color: AppThemeTokens.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Last indexed: ${_formatDateTime(metadata.lastRunAt)}',
+                      style: GoogleFonts.lato(
+                        fontSize: 12,
+                        color: AppThemeTokens.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      'Indexed videos: ${metadata.indexedVideos} | frames: ${metadata.indexedFrames}',
+                      style: GoogleFonts.lato(
+                        fontSize: 12,
+                        color: AppThemeTokens.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton.icon(
+                      onPressed: isRunning
+                          ? null
+                          : () {
+                              _embeddingIndexStatusService.requestFullRebuild();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Embedding index rebuild requested.',
+                                  ),
+                                ),
+                              );
+                            },
+                      icon: const Icon(Icons.replay_rounded),
+                      label: const Text('Rebuild embedding index'),
+                    ),
+                    if (state.error != null && state.error!.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          state.error!,
+                          style: GoogleFonts.lato(
+                            fontSize: 11,
+                            color: Colors.redAccent,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _formatDateTime(DateTime? dateTime) {
+    if (dateTime == null) {
+      return 'never';
+    }
+    String twoDigits(int value) => value.toString().padLeft(2, '0');
+    return '${dateTime.year}-${twoDigits(dateTime.month)}-${twoDigits(dateTime.day)} '
+        '${twoDigits(dateTime.hour)}:${twoDigits(dateTime.minute)}';
+  }
+
+  String _embeddingRuntimeLabel(EmbeddingRuntimeMode mode) {
+    switch (mode) {
+      case EmbeddingRuntimeMode.auto:
+        return 'Auto';
+      case EmbeddingRuntimeMode.androidNative:
+        return 'Android';
+      case EmbeddingRuntimeMode.deterministic:
+        return 'Deterministic';
+    }
+  }
+
+  String _embeddingRuntimeDescription(EmbeddingRuntimeMode mode) {
+    switch (mode) {
+      case EmbeddingRuntimeMode.auto:
+        return 'Prefer Android on-device runtime, fall back automatically.';
+      case EmbeddingRuntimeMode.androidNative:
+        return 'Require Android runtime when available (best visual relevance).';
+      case EmbeddingRuntimeMode.deterministic:
+        return 'Deterministic fallback for testing and predictable output.';
+    }
   }
 
   Widget _sectionHeader(String text) {

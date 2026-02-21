@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:empty_player/models/video_embedding_chunk.dart';
 import 'package:empty_player/models/video_item.dart';
@@ -134,10 +133,8 @@ class VisualSearchSpikeService {
       final timestampMs = (durationMs * progress).round();
       final frame = VideoFrameInput(
         mediaId: video.id,
+        sourcePath: video.path,
         timestamp: Duration(milliseconds: timestampMs),
-        bytes: Uint8List.fromList(
-          '$timestampMs:${video.path}:${video.name}'.codeUnits,
-        ),
       );
       final vector = await runtime.embedFrame(frame);
       chunks.add(

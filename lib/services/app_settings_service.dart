@@ -6,6 +6,7 @@ class AppSettingsService {
   static const _keyDefaultSpeed = 'default_playback_speed';
   static const _keySubtitleOffset = 'subtitle_offset_seconds';
   static const _keySubtitlesEnabled = 'subtitles_enabled';
+  static const _keyEmbeddingRuntimeMode = 'embedding_runtime_mode_v1';
 
   static final AppSettingsService _instance = AppSettingsService._internal();
   factory AppSettingsService() => _instance;
@@ -37,4 +38,9 @@ class AppSettingsService {
   bool get subtitlesEnabled => _prefs?.getBool(_keySubtitlesEnabled) ?? false;
   set subtitlesEnabled(bool value) =>
       _prefs?.setBool(_keySubtitlesEnabled, value);
+
+  String get embeddingRuntimeMode =>
+      _prefs?.getString(_keyEmbeddingRuntimeMode) ?? 'auto';
+  set embeddingRuntimeMode(String value) =>
+      _prefs?.setString(_keyEmbeddingRuntimeMode, value);
 }

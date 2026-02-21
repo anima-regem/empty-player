@@ -1,25 +1,40 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:empty_player/components/loading_animation.dart';
 import 'package:empty_player/components/mini_player.dart';
 import 'package:empty_player/models/media_source.dart';
 import 'package:empty_player/models/playback_session.dart';
 import 'package:empty_player/models/playback_state.dart';
+import 'package:empty_player/models/vector_search_hit.dart';
 import 'package:empty_player/models/video_item.dart';
+import 'package:empty_player/models/index_job_state.dart';
 import 'package:empty_player/pages/about_page.dart';
 import 'package:empty_player/pages/network_stream_page.dart';
 import 'package:empty_player/pages/settings_page.dart';
 import 'package:empty_player/pages/video_list_page.dart';
 import 'package:empty_player/pages/video_player.dart';
+import 'package:empty_player/services/app_settings_service.dart';
 import 'package:empty_player/services/library_preferences_service.dart';
 import 'package:empty_player/services/library_repository.dart';
 import 'package:empty_player/services/mini_player_service.dart';
 import 'package:empty_player/services/playback_repository.dart';
+import 'package:empty_player/services/embedding_runtime.dart';
+import 'package:empty_player/services/embedding_index_status_service.dart';
+import 'package:empty_player/services/default_vector_index_repository.dart';
+import 'package:empty_player/services/indexing_scheduler.dart';
+import 'package:empty_player/services/vector_index_repository.dart';
+import 'package:empty_player/services/video_semantic_search_service.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:empty_player/ui/app_theme_tokens.dart';
 import 'package:empty_player/ui/layout_system.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 enum _HeaderMenuAction { about, refresh, stream }
 
@@ -41,7 +56,32 @@ class _HomePageState extends State<HomePage>
       LibraryPreferencesService();
   final PlaybackRepository _playbackRepository =
       SharedPrefsPlaybackRepository();
+  final AppSettingsService _settings = AppSettingsService();
   final MiniPlayerService _miniPlayerService = MiniPlayerService();
+  final EmbeddingIndexStatusService _embeddingIndexStatus =
+      EmbeddingIndexStatusService.instance;
+  EmbeddingRuntime _embeddingRuntime = const DeterministicSpikeEmbeddingRuntime(
+    runtimeName: 'deterministic_fallback',
+    dimensions: 128,
+  );
+  final VectorIndexRepository _vectorIndexRepository =
+      createDefaultVectorIndexRepository();
+  final TextEditingController _searchController = TextEditingController();
+
+  late VideoSemanticSearchService _semanticSearchService;
+  InProcessIndexingScheduler? _indexingScheduler;
+  StreamSubscription<IndexJobState>? _indexingStateSubscription;
+  Timer? _semanticDebounceTimer;
+  List<String> _semanticRankedVideoIds = const [];
+  Map<String, double> _semanticScoreById = const {};
+  bool _semanticReady = false;
+  bool _semanticIndexing = false;
+  String? _semanticError;
+  bool _imageSearchActive = false;
+  String? _imageSearchPath;
+  int _lastHandledEmbeddingCommandVersion = 0;
+  final Map<String, Future<Uint8List?>> _thumbnailFutures =
+      <String, Future<Uint8List?>>{};
 
   List<VideoFolder> _folders = [];
   List<VideoItem> _allVideos = [];
@@ -57,6 +97,13 @@ class _HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    unawaited(_embeddingIndexStatus.ensureInitialized());
+    _semanticSearchService = VideoSemanticSearchService(
+      runtime: _embeddingRuntime,
+      indexRepository: _vectorIndexRepository,
+    );
+    _setupSemanticSearch();
+    unawaited(_initializeEmbeddingRuntime());
     _miniPlayerService.addListener(_onMiniPlayerStateChanged);
     _initializePreferences();
     _loadVideos();
@@ -65,6 +112,283 @@ class _HomePageState extends State<HomePage>
   void _onMiniPlayerStateChanged() {
     if (mounted) {
       setState(() {});
+    }
+  }
+
+  void _setupSemanticSearch() {
+    _indexingScheduler = InProcessIndexingScheduler(
+      runIncremental: () => _runSemanticIndexing(forceRebuild: false),
+      runFull: () => _runSemanticIndexing(forceRebuild: true),
+    );
+    _lastHandledEmbeddingCommandVersion = _embeddingIndexStatus.commandVersion;
+    _embeddingIndexStatus.commands.addListener(_handleEmbeddingCommand);
+    _indexingStateSubscription = _indexingScheduler!.state.listen((state) {
+      if (!mounted) return;
+      setState(() {
+        _semanticIndexing = state.status == IndexJobStatus.running;
+        _semanticReady =
+            state.status == IndexJobStatus.completed || _semanticReady;
+        _semanticError = state.error;
+      });
+      _embeddingIndexStatus.update(state);
+      if (state.status == IndexJobStatus.completed &&
+          _searchQuery.trim().isNotEmpty) {
+        _scheduleSemanticSearch(_searchQuery);
+      }
+    });
+  }
+
+  Future<void> _initializeEmbeddingRuntime() async {
+    await _settings.init();
+    final mode = EmbeddingRuntimeMode.fromStorageValue(
+      _settings.embeddingRuntimeMode,
+    );
+    final resolvedRuntime = await createEmbeddingRuntime(mode: mode);
+    if (!mounted) return;
+    if (resolvedRuntime.runtimeName == _embeddingRuntime.runtimeName &&
+        resolvedRuntime.dimensions == _embeddingRuntime.dimensions) {
+      return;
+    }
+
+    setState(() {
+      _embeddingRuntime = resolvedRuntime;
+      _semanticReady = false;
+      _semanticError = null;
+      _semanticRankedVideoIds = const [];
+      _semanticScoreById = const {};
+      _semanticSearchService = VideoSemanticSearchService(
+        runtime: _embeddingRuntime,
+        indexRepository: _vectorIndexRepository,
+      );
+    });
+    _triggerSemanticIndexing();
+  }
+
+  void _handleEmbeddingCommand() {
+    final version = _embeddingIndexStatus.commandVersion;
+    if (version <= _lastHandledEmbeddingCommandVersion) {
+      return;
+    }
+    _lastHandledEmbeddingCommandVersion = version;
+    final scheduler = _indexingScheduler;
+    if (scheduler != null) {
+      unawaited(scheduler.scheduleFull());
+    }
+  }
+
+  Future<void> _runSemanticIndexing({required bool forceRebuild}) async {
+    if (_allVideos.isEmpty) return;
+    final targetVideos = _allVideos
+        .where((video) => video.path.trim().isNotEmpty)
+        .toList(growable: false);
+
+    final indexedCounts = await _semanticSearchService.indexVideos(
+      videos: targetVideos,
+      framesPerVideo: 3,
+      maxVideos: targetVideos.length,
+      candidateMultiplier: 4,
+      sceneSimilarityThreshold: 0.84,
+      forceRebuild: forceRebuild,
+      onProgress: (progress) async {
+        _embeddingIndexStatus.update(
+          IndexJobState(status: IndexJobStatus.running, progress: progress),
+        );
+      },
+    );
+
+    if (!mounted) return;
+    final indexedAt = DateTime.now();
+    setState(() {
+      _allVideos = _allVideos
+          .map((video) {
+            final count = indexedCounts[video.id];
+            if (count == null) return video;
+            return video.copyWith(
+              indexedAt: indexedAt,
+              indexedFrameCount: count,
+              visualIndexVersion: _embeddingRuntime.runtimeName,
+            );
+          })
+          .toList(growable: false);
+      _semanticReady = indexedCounts.isNotEmpty;
+      _semanticError = null;
+    });
+    final indexedFrames = indexedCounts.values.fold<int>(
+      0,
+      (sum, count) => sum + count,
+    );
+    await _embeddingIndexStatus.saveMetadata(
+      lastRunAt: indexedAt,
+      indexedVideos: indexedCounts.length,
+      indexedFrames: indexedFrames,
+    );
+    if (_searchQuery.trim().isNotEmpty && indexedCounts.isNotEmpty) {
+      _scheduleSemanticSearch(_searchQuery);
+    }
+  }
+
+  void _triggerSemanticIndexing() {
+    _indexingScheduler?.scheduleIncremental();
+  }
+
+  void _scheduleSemanticSearch(String rawQuery) {
+    _semanticDebounceTimer?.cancel();
+    final query = rawQuery.trim();
+    if (query.isEmpty) {
+      if (_semanticRankedVideoIds.isNotEmpty ||
+          _semanticError != null ||
+          _semanticScoreById.isNotEmpty) {
+        setState(() {
+          _semanticRankedVideoIds = const [];
+          _semanticScoreById = const {};
+          _semanticError = null;
+        });
+      }
+      return;
+    }
+
+    if (_semanticIndexing || !_semanticReady) {
+      setState(() {
+        _semanticRankedVideoIds = const [];
+        _semanticScoreById = const {};
+      });
+      return;
+    }
+
+    _semanticDebounceTimer = Timer(const Duration(milliseconds: 260), () async {
+      try {
+        final hits = await _semanticSearchService.search(
+          query,
+          limit: 40,
+          minScore: 0.14,
+        );
+        if (!mounted || _searchQuery.trim() != query) return;
+        final scoreMap = _scoreMapFromHits(hits);
+        setState(() {
+          _semanticRankedVideoIds = hits
+              .map((hit) => hit.mediaId)
+              .toList(growable: false);
+          _semanticScoreById = scoreMap;
+          _semanticError = null;
+        });
+      } catch (error) {
+        if (!mounted || _searchQuery.trim() != query) return;
+        setState(() {
+          _semanticRankedVideoIds = const [];
+          _semanticScoreById = const {};
+          _semanticError = error.toString();
+        });
+      }
+    });
+  }
+
+  Map<String, double> _scoreMapFromHits(List<VectorSearchHit> hits) {
+    final map = <String, double>{};
+    for (final hit in hits) {
+      final current = map[hit.mediaId];
+      if (current == null || hit.score > current) {
+        map[hit.mediaId] = hit.score;
+      }
+    }
+    return map;
+  }
+
+  Future<void> _startImageSearch() async {
+    if (_semanticIndexing || !_semanticReady) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Embedding index is still building. Try again shortly.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final selection = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+      withData: true,
+    );
+    if (!mounted || selection == null || selection.files.isEmpty) {
+      return;
+    }
+
+    final picked = selection.files.single;
+    final resolvedPath = await _resolveImagePath(picked);
+    if (resolvedPath == null || resolvedPath.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not read selected image.')),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _imageSearchActive = true;
+      _imageSearchPath = resolvedPath;
+      _searchQuery = '';
+      _searchController.clear();
+      _semanticError = null;
+    });
+    if (_tabController.index != 1) {
+      _tabController.animateTo(1);
+    }
+
+    try {
+      final hits = await _semanticSearchService.searchByImagePath(
+        resolvedPath,
+        limit: 60,
+        minScore: 0.12,
+      );
+      if (!mounted || _imageSearchPath != resolvedPath) return;
+      setState(() {
+        _semanticRankedVideoIds = hits
+            .map((hit) => hit.mediaId)
+            .toList(growable: false);
+        _semanticScoreById = _scoreMapFromHits(hits);
+        _semanticError = hits.isEmpty ? 'No visual matches found.' : null;
+      });
+    } catch (error) {
+      if (!mounted || _imageSearchPath != resolvedPath) return;
+      setState(() {
+        _semanticRankedVideoIds = const [];
+        _semanticScoreById = const {};
+        _semanticError = error.toString();
+      });
+    }
+  }
+
+  Future<String?> _resolveImagePath(PlatformFile picked) async {
+    final directPath = picked.path?.trim();
+    if (directPath != null && directPath.isNotEmpty) {
+      return directPath;
+    }
+    final bytes = picked.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      return null;
+    }
+    final tempDir = await getTemporaryDirectory();
+    final extension = (picked.extension ?? 'jpg').replaceAll('.', '').trim();
+    final file = File(
+      '${tempDir.path}/visual_query_${DateTime.now().millisecondsSinceEpoch}.$extension',
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  void _clearImageSearch() {
+    setState(() {
+      _imageSearchActive = false;
+      _imageSearchPath = null;
+      _semanticRankedVideoIds = const [];
+      _semanticScoreById = const {};
+      _semanticError = null;
+    });
+    if (_searchQuery.trim().isNotEmpty) {
+      _scheduleSemanticSearch(_searchQuery);
     }
   }
 
@@ -90,6 +414,7 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _loadVideos() async {
+    _thumbnailFutures.clear();
     setState(() {
       _isLoading = true;
       _permissionDenied = false;
@@ -137,6 +462,7 @@ class _HomePageState extends State<HomePage>
         _isLoading = false;
         _permissionDenied = false;
       });
+      _triggerSemanticIndexing();
     } catch (e) {
       debugPrint('Error loading videos: $e');
       if (!mounted) return;
@@ -188,40 +514,139 @@ class _HomePageState extends State<HomePage>
 
   List<VideoItem> get _visibleVideos {
     final query = _searchQuery.trim().toLowerCase();
-    final filtered = _allVideos.where((video) {
-      if (query.isEmpty) return true;
-      return video.name.toLowerCase().contains(query);
-    }).toList();
+    if (_imageSearchActive) {
+      if (_semanticScoreById.isEmpty) return const [];
+      final byId = <String, VideoItem>{
+        for (final video in _allVideos) video.id: video,
+      };
+      final ids = _semanticScoreById.keys.toList(growable: false)
+        ..sort(
+          (a, b) => (_semanticScoreById[b] ?? 0).compareTo(
+            _semanticScoreById[a] ?? 0,
+          ),
+        );
+      return ids
+          .map((id) => byId[id])
+          .whereType<VideoItem>()
+          .toList(growable: false);
+    }
 
-    filtered.sort((a, b) {
-      switch (_sortOption) {
-        case LibrarySortOption.nameAsc:
-          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        case LibrarySortOption.nameDesc:
-          return b.name.toLowerCase().compareTo(a.name.toLowerCase());
-        case LibrarySortOption.dateModifiedDesc:
-          final aDate =
-              a.lastPlayedAt ??
-              a.dateModified ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          final bDate =
-              b.lastPlayedAt ??
-              b.dateModified ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          return bDate.compareTo(aDate);
-        case LibrarySortOption.sizeDesc:
-          return (b.size ?? 0).compareTo(a.size ?? 0);
-        case LibrarySortOption.durationDesc:
-          return (b.duration ?? Duration.zero).compareTo(
-            a.duration ?? Duration.zero,
+    final lexical = _allVideos
+        .where((video) {
+          if (query.isEmpty) return true;
+          return video.name.toLowerCase().contains(query);
+        })
+        .toList(growable: false);
+
+    if (query.isNotEmpty && _semanticScoreById.isNotEmpty) {
+      final semanticScores = _semanticScoreById.values.toList(growable: false);
+      final minSemantic = semanticScores.reduce(math.min);
+      final maxSemantic = semanticScores.reduce(math.max);
+
+      final ranked = lexical.toList(growable: false)
+        ..sort((a, b) {
+          final aScore = _hybridScore(
+            video: a,
+            query: query,
+            minSemantic: minSemantic,
+            maxSemantic: maxSemantic,
           );
-      }
-    });
+          final bScore = _hybridScore(
+            video: b,
+            query: query,
+            minSemantic: minSemantic,
+            maxSemantic: maxSemantic,
+          );
+          if (aScore == bScore) {
+            return _librarySortComparator(a, b);
+          }
+          return bScore.compareTo(aScore);
+        });
+      return ranked;
+    }
 
-    return filtered;
+    final sorted = lexical.toList(growable: false)
+      ..sort(_librarySortComparator);
+    return sorted;
+  }
+
+  double _hybridScore({
+    required VideoItem video,
+    required String query,
+    required double minSemantic,
+    required double maxSemantic,
+  }) {
+    final lexical = _lexicalScore(video.name, query);
+    final semanticRaw = _semanticScoreById[video.id];
+    final semantic = _normalizeSemantic(
+      semanticRaw: semanticRaw,
+      minSemantic: minSemantic,
+      maxSemantic: maxSemantic,
+    );
+    final recencyBoost = video.lastPlayedAt == null ? 0.0 : 0.08;
+    return (0.56 * lexical) + (0.40 * semantic) + recencyBoost;
+  }
+
+  double _lexicalScore(String title, String query) {
+    final normalizedTitle = title.toLowerCase();
+    final normalizedQuery = query.toLowerCase();
+    if (normalizedTitle == normalizedQuery) return 1.0;
+    if (normalizedTitle.startsWith(normalizedQuery)) return 0.95;
+    if (normalizedTitle.contains(normalizedQuery)) return 0.72;
+    final tokens = normalizedQuery
+        .split(RegExp(r'\\s+'))
+        .where((token) => token.trim().isNotEmpty)
+        .toList(growable: false);
+    if (tokens.isEmpty) return 0;
+    var matches = 0;
+    for (final token in tokens) {
+      if (normalizedTitle.contains(token)) {
+        matches += 1;
+      }
+    }
+    return matches / tokens.length;
+  }
+
+  double _normalizeSemantic({
+    required double? semanticRaw,
+    required double minSemantic,
+    required double maxSemantic,
+  }) {
+    if (semanticRaw == null) return 0;
+    final spread = maxSemantic - minSemantic;
+    if (spread <= 1e-9) return 1;
+    return ((semanticRaw - minSemantic) / spread).clamp(0, 1).toDouble();
+  }
+
+  int _librarySortComparator(VideoItem a, VideoItem b) {
+    switch (_sortOption) {
+      case LibrarySortOption.nameAsc:
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      case LibrarySortOption.nameDesc:
+        return b.name.toLowerCase().compareTo(a.name.toLowerCase());
+      case LibrarySortOption.dateModifiedDesc:
+        final aDate =
+            a.lastPlayedAt ??
+            a.dateModified ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bDate =
+            b.lastPlayedAt ??
+            b.dateModified ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return bDate.compareTo(aDate);
+      case LibrarySortOption.sizeDesc:
+        return (b.size ?? 0).compareTo(a.size ?? 0);
+      case LibrarySortOption.durationDesc:
+        return (b.duration ?? Duration.zero).compareTo(
+          a.duration ?? Duration.zero,
+        );
+    }
   }
 
   List<VideoFolder> get _visibleFolders {
+    if (_imageSearchActive) {
+      return const [];
+    }
     final query = _searchQuery.trim().toLowerCase();
     final filtered = _folders.where((folder) {
       if (query.isEmpty) return true;
@@ -336,7 +761,12 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
+    _semanticDebounceTimer?.cancel();
+    _indexingStateSubscription?.cancel();
+    _indexingScheduler?.dispose();
+    _embeddingIndexStatus.commands.removeListener(_handleEmbeddingCommand);
     _miniPlayerService.removeListener(_onMiniPlayerStateChanged);
+    _searchController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -436,11 +866,12 @@ class _HomePageState extends State<HomePage>
           _buildHeaderAction(
             icon: Icons.settings_outlined,
             tooltip: 'Settings',
-            onTap: () {
-              Navigator.push(
+            onTap: () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsPage()),
               );
+              await _initializeEmbeddingRuntime();
             },
           ),
           SizedBox(width: metrics.compactActionSpacing),
@@ -526,6 +957,7 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildSearchAndSortBar(LayoutMetrics metrics) {
+    final activeImageSearch = _imageSearchActive && _imageSearchPath != null;
     if (metrics.isCompact) {
       return Padding(
         padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
@@ -533,11 +965,25 @@ class _HomePageState extends State<HomePage>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildSearchField(),
+            if (activeImageSearch) ...[
+              const SizedBox(height: 8),
+              _buildImageSearchBanner(),
+            ],
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerRight,
               child: _buildSortButton(compact: true),
             ),
+            if (_semanticError != null &&
+                _semanticError!.trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                _semanticError!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.lato(color: Colors.redAccent, fontSize: 11),
+              ),
+            ],
           ],
         ),
       );
@@ -545,11 +991,29 @@ class _HomePageState extends State<HomePage>
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: _buildSearchField()),
-          const SizedBox(width: 10),
-          _buildSortButton(compact: false),
+          Row(
+            children: [
+              Expanded(child: _buildSearchField()),
+              if (activeImageSearch) ...[
+                const SizedBox(width: 8),
+                Flexible(child: _buildImageSearchBanner(compact: true)),
+              ],
+              const SizedBox(width: 10),
+              _buildSortButton(compact: false),
+            ],
+          ),
+          if (_semanticError != null && _semanticError!.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              _semanticError!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.lato(color: Colors.redAccent, fontSize: 11),
+            ),
+          ],
         ],
       ),
     );
@@ -557,7 +1021,17 @@ class _HomePageState extends State<HomePage>
 
   Widget _buildSearchField() {
     return TextField(
-      onChanged: (value) => setState(() => _searchQuery = value),
+      controller: _searchController,
+      onChanged: (value) {
+        setState(() {
+          _searchQuery = value;
+          if (_imageSearchActive && value.trim().isNotEmpty) {
+            _imageSearchActive = false;
+            _imageSearchPath = null;
+          }
+        });
+        _scheduleSemanticSearch(value);
+      },
       style: GoogleFonts.lato(color: Colors.white),
       decoration: InputDecoration(
         hintText: 'Search videos or folders',
@@ -566,6 +1040,40 @@ class _HomePageState extends State<HomePage>
           Icons.search,
           color: AppThemeTokens.textSecondary,
         ),
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Search by image',
+              onPressed: _startImageSearch,
+              icon: const Icon(
+                Icons.image_search_rounded,
+                color: AppThemeTokens.textSecondary,
+                size: 20,
+              ),
+            ),
+            if (_searchQuery.trim().isNotEmpty || _imageSearchActive)
+              IconButton(
+                tooltip: 'Clear search',
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() {
+                    _searchQuery = '';
+                    _semanticRankedVideoIds = const [];
+                    _semanticScoreById = const {};
+                    _semanticError = null;
+                    _imageSearchActive = false;
+                    _imageSearchPath = null;
+                  });
+                },
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: AppThemeTokens.textSecondary,
+                  size: 20,
+                ),
+              ),
+          ],
+        ),
         filled: true,
         fillColor: AppThemeTokens.surface,
         contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -573,6 +1081,49 @@ class _HomePageState extends State<HomePage>
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide.none,
         ),
+      ),
+    );
+  }
+
+  Widget _buildImageSearchBanner({bool compact = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppThemeTokens.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppThemeTokens.surfaceAlt),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          const Icon(
+            Icons.image_search_rounded,
+            color: AppThemeTokens.accent,
+            size: 16,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              compact ? 'Image search active' : 'Visual search active',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.lato(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: _clearImageSearch,
+            child: const Icon(
+              Icons.close_rounded,
+              color: AppThemeTokens.textSecondary,
+              size: 16,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -834,7 +1385,11 @@ class _HomePageState extends State<HomePage>
     ResponsiveScaffoldInsets insets,
   ) {
     final videos = _visibleVideos;
-    if (videos.isEmpty) return _buildEmptyState();
+    if (videos.isEmpty) {
+      return _imageSearchActive
+          ? _buildImageSearchEmptyState()
+          : _buildEmptyState();
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -969,19 +1524,7 @@ class _HomePageState extends State<HomePage>
             Expanded(
               child: Stack(
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          AppThemeTokens.surface,
-                          AppThemeTokens.surfaceAlt,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
+                  _buildVideoThumbnail(video),
                   Positioned(
                     left: 6,
                     top: 6,
@@ -1071,6 +1614,60 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  Widget _buildVideoThumbnail(VideoItem video) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: FutureBuilder<Uint8List?>(
+        future: _thumbnailFutureFor(video),
+        builder: (context, snapshot) {
+          final bytes = snapshot.data;
+          if (bytes != null && bytes.isNotEmpty) {
+            return SizedBox.expand(
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              ),
+            );
+          }
+
+          return Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppThemeTokens.surface, AppThemeTokens.surfaceAlt],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.movie_outlined,
+                color: AppThemeTokens.textSecondary,
+                size: 24,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<Uint8List?> _thumbnailFutureFor(VideoItem video) {
+    return _thumbnailFutures.putIfAbsent(video.id, () => _loadThumbnail(video));
+  }
+
+  Future<Uint8List?> _loadThumbnail(VideoItem video) async {
+    final assetId = (video.thumbnail ?? video.id).trim();
+    if (assetId.isEmpty) return null;
+    final asset = await AssetEntity.fromId(assetId);
+    if (asset == null) return null;
+    return asset.thumbnailDataWithSize(
+      const ThumbnailSize(360, 202),
+      quality: 76,
+      format: ThumbnailFormat.jpeg,
+    );
+  }
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -1092,6 +1689,50 @@ class _HomePageState extends State<HomePage>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildImageSearchEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.image_search_rounded,
+              color: AppThemeTokens.textSecondary,
+              size: 40,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No visual matches found',
+              style: GoogleFonts.lato(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Try another image or use text search.',
+              style: GoogleFonts.lato(
+                color: AppThemeTokens.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton(
+              onPressed: _clearImageSearch,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: AppThemeTokens.surfaceAlt),
+              ),
+              child: Text('Clear visual search', style: GoogleFonts.lato()),
+            ),
+          ],
+        ),
       ),
     );
   }

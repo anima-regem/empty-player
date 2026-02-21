@@ -11,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 class VideoService {
   static const String _cacheKey = 'video_cache';
   static const String _cacheTimestampKey = 'video_cache_timestamp';
+  static const String _cacheSchemaVersionKey = 'video_cache_schema_version';
+  static const int _currentCacheSchemaVersion = 2;
   static const Duration _cacheExpiry = Duration(hours: 24);
 
   // List of valid video file extensions
@@ -159,6 +161,7 @@ class VideoService {
         _cacheTimestampKey,
         DateTime.now().millisecondsSinceEpoch,
       );
+      await prefs.setInt(_cacheSchemaVersionKey, _currentCacheSchemaVersion);
     } catch (e) {
       debugPrint('Error saving cache: $e');
     }
@@ -169,8 +172,13 @@ class VideoService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final timestamp = prefs.getInt(_cacheTimestampKey);
+      final cacheVersion =
+          prefs.getInt(_cacheSchemaVersionKey) ?? _currentCacheSchemaVersion;
 
       if (timestamp == null) return null;
+      if (cacheVersion != _currentCacheSchemaVersion) {
+        return null;
+      }
 
       final cacheTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
       if (DateTime.now().difference(cacheTime) > _cacheExpiry) {
@@ -197,6 +205,7 @@ class VideoService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_cacheKey);
       await prefs.remove(_cacheTimestampKey);
+      await prefs.remove(_cacheSchemaVersionKey);
       debugPrint('Video cache cleared');
     } catch (e) {
       debugPrint('Error clearing cache: $e');
@@ -250,7 +259,7 @@ class VideoService {
                 id: asset.id,
                 name: asset.title ?? path.basename(file.path),
                 path: file.path,
-                thumbnail: null,
+                thumbnail: asset.id,
                 mimeType: _inferMimeType(file.path),
                 duration: Duration(seconds: asset.duration),
                 size: await file.length(),
