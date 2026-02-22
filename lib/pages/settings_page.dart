@@ -433,7 +433,7 @@ class _SettingsPageState extends State<SettingsPage> {
       case EmbeddingRuntimeMode.auto:
         return 'Auto';
       case EmbeddingRuntimeMode.androidNative:
-        return 'Android';
+        return 'Android Model';
       case EmbeddingRuntimeMode.deterministic:
         return 'Deterministic';
     }
@@ -442,9 +442,9 @@ class _SettingsPageState extends State<SettingsPage> {
   String _embeddingRuntimeDescription(EmbeddingRuntimeMode mode) {
     switch (mode) {
       case EmbeddingRuntimeMode.auto:
-        return 'Prefer Android on-device runtime; semantic features are disabled if unavailable.';
+        return 'Prefer Android multimodal model runtime; semantic features are disabled if unavailable.';
       case EmbeddingRuntimeMode.androidNative:
-        return 'Require Android runtime (semantic features unavailable if runtime is missing).';
+        return 'Require quantized Android multimodal runtime (LiteRT/ONNX+NNAPI class providers).';
       case EmbeddingRuntimeMode.deterministic:
         return 'Deterministic fallback for testing and predictable output.';
     }

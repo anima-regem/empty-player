@@ -35,6 +35,10 @@ class VectorMediaIndexState {
 
 abstract interface class VectorIndexRepository {
   Future<void> upsert(Iterable<VideoEmbeddingChunk> chunks);
+  Future<Map<String, List<VideoEmbeddingChunk>>> getChunksByMediaIds(
+    Set<String> mediaIds, {
+    int perMediaLimit = 24,
+  });
   Future<List<VectorSearchHit>> query(
     List<double> queryVector, {
     int limit = 20,
@@ -79,6 +83,30 @@ class InMemoryVectorIndexRepository implements VectorIndexRepository {
       }
       _annBuckets.putIfAbsent(indexed.annKey, () => []).add(indexed);
     }
+  }
+
+  @override
+  Future<Map<String, List<VideoEmbeddingChunk>>> getChunksByMediaIds(
+    Set<String> mediaIds, {
+    int perMediaLimit = 24,
+  }) async {
+    if (mediaIds.isEmpty) {
+      return const <String, List<VideoEmbeddingChunk>>{};
+    }
+
+    final result = <String, List<VideoEmbeddingChunk>>{};
+    for (final mediaId in mediaIds) {
+      final chunks = _chunksByMedia[mediaId];
+      if (chunks == null || chunks.isEmpty) continue;
+      final sorted = chunks.toList(growable: false)
+        ..sort((a, b) => a.chunk.frameTsMs.compareTo(b.chunk.frameTsMs));
+      final limited = sorted
+          .take(math.max(1, perMediaLimit))
+          .map((entry) => entry.chunk)
+          .toList(growable: false);
+      result[mediaId] = limited;
+    }
+    return result;
   }
 
   @override

@@ -124,8 +124,40 @@ class AndroidOnDeviceEmbeddingRuntime implements EmbeddingRuntime {
     this.dimensions = 128,
   });
 
+  Future<AndroidEmbeddingRuntimeStatus?> runtimeStatus() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final payload = await _channel.invokeMethod<dynamic>('runtimeStatus');
+      if (payload is! Map) return null;
+      final map = Map<String, dynamic>.from(payload);
+      final ready = (map['ready'] as bool?) ?? false;
+      final runtimeName =
+          (map['runtimeName'] as String?)?.trim().isNotEmpty == true
+          ? (map['runtimeName'] as String).trim()
+          : null;
+      final provider = (map['provider'] as String?)?.trim();
+      final reason = (map['reason'] as String?)?.trim();
+      final quantized = (map['quantized'] as bool?) ?? false;
+      final dimensions = (map['dimensions'] as num?)?.toInt();
+      return AndroidEmbeddingRuntimeStatus(
+        ready: ready,
+        runtimeName: runtimeName,
+        provider: provider,
+        reason: reason,
+        quantized: quantized,
+        dimensions: dimensions,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<bool> isReady() async {
     if (!Platform.isAndroid) return false;
+    final status = await runtimeStatus();
+    if (status != null) {
+      return status.ready;
+    }
     final ready = await _channel.invokeMethod<bool>('isReady');
     return ready ?? false;
   }
@@ -240,8 +272,30 @@ Future<EmbeddingRuntime> createEmbeddingRuntime({
 
   final androidRuntime = const AndroidOnDeviceEmbeddingRuntime();
   try {
+    final status = await androidRuntime.runtimeStatus();
+    if (status != null) {
+      if (status.ready && _isProductionMultimodalProvider(status.provider)) {
+        final resolvedName = (status.runtimeName?.isNotEmpty ?? false)
+            ? status.runtimeName!
+            : 'android_native_multimodal';
+        final resolvedDimensions =
+            (status.dimensions ?? androidRuntime.dimensions)
+                .clamp(32, 2048)
+                .toInt();
+        return AndroidOnDeviceEmbeddingRuntime(
+          runtimeName: resolvedName,
+          dimensions: resolvedDimensions,
+        );
+      }
+      return UnavailableEmbeddingRuntime(
+        reason:
+            status.reason ??
+            'On-device multimodal embedding runtime is unavailable.',
+      );
+    }
+
     final ready = await androidRuntime.isReady();
-    if (ready) {
+    if (ready && mode == EmbeddingRuntimeMode.androidNative) {
       return androidRuntime;
     }
   } catch (_) {
@@ -252,4 +306,34 @@ Future<EmbeddingRuntime> createEmbeddingRuntime({
     reason:
         'On-device embedding runtime is unavailable. Install a compatible Android build or switch to deterministic mode in Settings.',
   );
+}
+
+class AndroidEmbeddingRuntimeStatus {
+  final bool ready;
+  final String? runtimeName;
+  final String? provider;
+  final String? reason;
+  final bool quantized;
+  final int? dimensions;
+
+  const AndroidEmbeddingRuntimeStatus({
+    required this.ready,
+    this.runtimeName,
+    this.provider,
+    this.reason,
+    required this.quantized,
+    this.dimensions,
+  });
+}
+
+bool _isProductionMultimodalProvider(String? provider) {
+  if (provider == null) return false;
+  final normalized = provider.trim().toLowerCase();
+  if (normalized.isEmpty) return false;
+  return normalized.contains('onnx') ||
+      normalized.contains('nnapi') ||
+      normalized.contains('litert') ||
+      normalized.contains('tflite') ||
+      normalized.contains('mobileclip') ||
+      normalized.contains('siglip');
 }

@@ -41,6 +41,7 @@ android {
 
 dependencies {
     implementation("androidx.media:media:1.7.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 }
 
 flutter {

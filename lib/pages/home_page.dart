@@ -264,10 +264,11 @@ class _HomePageState extends State<HomePage>
 
     final indexedCounts = await _semanticSearchService.indexVideos(
       videos: targetVideos,
-      framesPerVideo: 3,
+      framesPerVideo: 8,
       maxVideos: targetVideos.length,
-      candidateMultiplier: 4,
-      sceneSimilarityThreshold: 0.84,
+      candidateMultiplier: 5,
+      sceneSimilarityThreshold: 0.82,
+      includeTemporalAggregate: true,
       forceRebuild: forceRebuild,
       onProgress: (progress) async {
         _embeddingIndexStatus.update(
@@ -683,20 +684,33 @@ class _HomePageState extends State<HomePage>
         }
       }
 
+      final rankingContext = _HybridRankingContext.build(
+        videos: candidatesById.values.toList(growable: false),
+        query: query,
+        semanticScoreById: _semanticScoreById,
+        favoriteMediaIds: _favoriteMediaIds,
+        lexicalScore: _lexicalScore,
+        completionAffinity: _completionAffinity,
+        recencySignal: _recencySignal,
+        explicitPreferenceSignal: _explicitPreferenceSignal,
+        normalizeSemantic:
+            ({
+              required double? semanticRaw,
+              required double minSemantic,
+              required double maxSemantic,
+            }) => _normalizeSemantic(
+              semanticRaw: semanticRaw,
+              minSemantic: minSemantic,
+              maxSemantic: maxSemantic,
+            ),
+        minSemantic: minSemantic,
+        maxSemantic: maxSemantic,
+      );
+
       final ranked = candidatesById.values.toList(growable: false)
         ..sort((a, b) {
-          final aScore = _hybridScore(
-            video: a,
-            query: query,
-            minSemantic: minSemantic,
-            maxSemantic: maxSemantic,
-          );
-          final bScore = _hybridScore(
-            video: b,
-            query: query,
-            minSemantic: minSemantic,
-            maxSemantic: maxSemantic,
-          );
+          final aScore = rankingContext.scoreFor(a);
+          final bScore = rankingContext.scoreFor(b);
           if (aScore == bScore) {
             return _librarySortComparator(a, b);
           }
@@ -708,29 +722,6 @@ class _HomePageState extends State<HomePage>
     final sorted = lexicalMatches.toList(growable: false)
       ..sort(_librarySortComparator);
     return sorted;
-  }
-
-  double _hybridScore({
-    required VideoItem video,
-    required String query,
-    required double minSemantic,
-    required double maxSemantic,
-  }) {
-    final lexical = _lexicalScore(video.name, query);
-    final semanticRaw = _semanticScoreById[video.id];
-    final semantic = _normalizeSemantic(
-      semanticRaw: semanticRaw,
-      minSemantic: minSemantic,
-      maxSemantic: maxSemantic,
-    );
-    final completionAffinity = _completionAffinity(video);
-    final recency = _recencySignal(video);
-    final explicitPreference = _explicitPreferenceSignal(video);
-    return (0.40 * lexical) +
-        (0.35 * semantic) +
-        (0.10 * completionAffinity) +
-        (0.08 * recency) +
-        (0.07 * explicitPreference);
   }
 
   double _lexicalScore(String title, String query) {
@@ -1990,5 +1981,104 @@ class _HomePageState extends State<HomePage>
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+}
+
+typedef _LexicalScoreFn = double Function(String title, String query);
+typedef _VideoSignalFn = double Function(VideoItem video);
+typedef _NormalizeSemanticFn =
+    double Function({
+      required double? semanticRaw,
+      required double minSemantic,
+      required double maxSemantic,
+    });
+
+class _HybridRankingContext {
+  final Map<String, double> _scoreById;
+
+  const _HybridRankingContext._(this._scoreById);
+
+  static _HybridRankingContext build({
+    required List<VideoItem> videos,
+    required String query,
+    required Map<String, double> semanticScoreById,
+    required Set<String> favoriteMediaIds,
+    required _LexicalScoreFn lexicalScore,
+    required _VideoSignalFn completionAffinity,
+    required _VideoSignalFn recencySignal,
+    required _VideoSignalFn explicitPreferenceSignal,
+    required _NormalizeSemanticFn normalizeSemantic,
+    required double minSemantic,
+    required double maxSemantic,
+  }) {
+    if (videos.isEmpty) {
+      return const _HybridRankingContext._(<String, double>{});
+    }
+
+    final lexicalById = <String, double>{};
+    final semanticById = <String, double>{};
+    final behaviorById = <String, double>{};
+    for (final video in videos) {
+      lexicalById[video.id] = lexicalScore(video.name, query);
+      semanticById[video.id] = normalizeSemantic(
+        semanticRaw: semanticScoreById[video.id],
+        minSemantic: minSemantic,
+        maxSemantic: maxSemantic,
+      );
+      final completion = completionAffinity(video);
+      final recency = recencySignal(video);
+      final preference = explicitPreferenceSignal(video);
+      final favoriteBoost = favoriteMediaIds.contains(video.id) ? 0.08 : 0.0;
+      behaviorById[video.id] =
+          ((0.42 * completion) + (0.28 * recency) + (0.30 * preference) +
+                  favoriteBoost)
+              .clamp(0.0, 1.0)
+              .toDouble();
+    }
+
+    final lexicalRank = _rankByScore(lexicalById);
+    final semanticRank = _rankByScore(semanticById);
+    final behaviorRank = _rankByScore(behaviorById);
+    final scoreById = <String, double>{};
+    for (final video in videos) {
+      final id = video.id;
+      final rrf = _rrf(
+        lexicalRank: lexicalRank[id] ?? 100000,
+        semanticRank: semanticRank[id] ?? 100000,
+        behaviorRank: behaviorRank[id] ?? 100000,
+      );
+      final lexical = lexicalById[id] ?? 0;
+      final semantic = semanticById[id] ?? 0;
+      final behavior = behaviorById[id] ?? 0;
+      final calibratedLinear =
+          (0.35 * lexical) + (0.50 * semantic) + (0.15 * behavior);
+      scoreById[id] = (0.65 * rrf) + (0.35 * calibratedLinear);
+    }
+
+    return _HybridRankingContext._(scoreById);
+  }
+
+  double scoreFor(VideoItem video) => _scoreById[video.id] ?? 0;
+
+  static Map<String, int> _rankByScore(Map<String, double> scores) {
+    final entries = scores.entries.toList(growable: false)
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final rankById = <String, int>{};
+    for (var i = 0; i < entries.length; i++) {
+      rankById[entries[i].key] = i + 1;
+    }
+    return rankById;
+  }
+
+  static double _rrf({
+    required int lexicalRank,
+    required int semanticRank,
+    required int behaviorRank,
+  }) {
+    const k = 60.0;
+    final lexical = 0.42 / (k + lexicalRank);
+    final semantic = 0.43 / (k + semanticRank);
+    final behavior = 0.15 / (k + behaviorRank);
+    return lexical + semantic + behavior;
   }
 }

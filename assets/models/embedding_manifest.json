@@ -1,0 +1,17 @@
+{
+  "runtimeName": "clip_vit_b32_int8_onnx",
+  "quantized": true,
+  "dimensions": 512,
+  "contextLength": 77,
+  "textModelAsset": "assets/models/clip/text_model_int8.onnx",
+  "visionModelAsset": "assets/models/clip/vision_model_int8.onnx",
+  "tokenizer": {
+    "vocabAsset": "assets/models/clip/vocab.json",
+    "mergesAsset": "assets/models/clip/merges.txt"
+  },
+  "image": {
+    "inputSize": 224,
+    "mean": [0.48145466, 0.4578275, 0.40821073],
+    "std": [0.26862954, 0.26130258, 0.27577711]
+  }
+}

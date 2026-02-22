@@ -116,6 +116,7 @@ class _ScriptedSemanticSearchService extends VideoSemanticSearchService {
     int maxVideos = 180,
     int candidateMultiplier = 3,
     double sceneSimilarityThreshold = 0.86,
+    bool includeTemporalAggregate = true,
     bool forceRebuild = false,
     Future<void> Function(double progress)? onProgress,
   }) async {

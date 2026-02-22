@@ -91,6 +91,44 @@ class SqliteVectorIndexRepository implements VectorIndexRepository {
   }
 
   @override
+  Future<Map<String, List<VideoEmbeddingChunk>>> getChunksByMediaIds(
+    Set<String> mediaIds, {
+    int perMediaLimit = 24,
+  }) async {
+    if (mediaIds.isEmpty) {
+      return const <String, List<VideoEmbeddingChunk>>{};
+    }
+
+    final db = await _db();
+    final safeLimit = math.max(1, perMediaLimit);
+    final result = <String, List<VideoEmbeddingChunk>>{};
+
+    await db.transaction((txn) async {
+      for (final mediaId in mediaIds) {
+        final rows = await txn.query(
+          'embedding_chunks',
+          columns: ['media_id', 'frame_ts_ms', 'vector_json', 'model_version'],
+          where: 'media_id = ?',
+          whereArgs: [mediaId],
+          orderBy: 'frame_ts_ms ASC',
+          limit: safeLimit,
+        );
+        if (rows.isEmpty) continue;
+        result[mediaId] = rows.map((row) {
+          return VideoEmbeddingChunk(
+            mediaId: row['media_id'] as String,
+            frameTsMs: (row['frame_ts_ms'] as num).toInt(),
+            vector: _vectorFromJson(row['vector_json'] as String),
+            modelVersion: row['model_version'] as String,
+          );
+        }).toList(growable: false);
+      }
+    });
+
+    return result;
+  }
+
+  @override
   Future<List<VectorSearchHit>> query(
     List<double> queryVector, {
     int limit = 20,
