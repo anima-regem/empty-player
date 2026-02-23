@@ -8,3 +8,12 @@ Place the following files in this folder:
 - `merges.txt`
 
 Use `/Users/vichukartha/Projects/empty_player/scripts/fetch_clip_int8_assets.sh` to download the canonical set used by this app.
+
+Optional fallback assets for devices where int8 kernels are unavailable:
+
+- `text_model.onnx`
+- `vision_model.onnx`
+
+To download fallback assets too:
+
+`INCLUDE_FP32=1 /Users/vichukartha/Projects/empty_player/scripts/fetch_clip_int8_assets.sh`

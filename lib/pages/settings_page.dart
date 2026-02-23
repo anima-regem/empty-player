@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -29,6 +31,8 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _pipOnClose = true;
   double _defaultSpeed = 1.0;
   EmbeddingRuntimeMode _embeddingRuntimeMode = EmbeddingRuntimeMode.auto;
+  AndroidEmbeddingRuntimeStatus? _runtimeStatus;
+  bool _runtimeStatusRefreshing = false;
 
   String _currentVersion = '';
   String? _latestVersion;
@@ -45,15 +49,40 @@ class _SettingsPageState extends State<SettingsPage> {
     await _settings.init();
     await _embeddingIndexStatusService.ensureInitialized();
     final packageInfo = await PackageInfo.fromPlatform();
+    final runtimeMode = EmbeddingRuntimeMode.fromStorageValue(
+      _settings.embeddingRuntimeMode,
+    );
+    final runtimeStatus = await _fetchRuntimeStatus(runtimeMode);
     setState(() {
       _backgroundPlayback = _settings.backgroundPlaybackEnabled;
       _pipOnClose = _settings.pipOnCloseEnabled;
       _defaultSpeed = _settings.defaultPlaybackSpeed;
-      _embeddingRuntimeMode = EmbeddingRuntimeMode.fromStorageValue(
-        _settings.embeddingRuntimeMode,
-      );
+      _embeddingRuntimeMode = runtimeMode;
+      _runtimeStatus = runtimeStatus;
       _currentVersion = packageInfo.version;
       _loading = false;
+    });
+  }
+
+  Future<AndroidEmbeddingRuntimeStatus?> _fetchRuntimeStatus(
+    EmbeddingRuntimeMode mode,
+  ) async {
+    if (mode == EmbeddingRuntimeMode.deterministic) {
+      return null;
+    }
+    return const AndroidOnDeviceEmbeddingRuntime().runtimeStatus();
+  }
+
+  Future<void> _refreshRuntimeStatus() async {
+    if (_runtimeStatusRefreshing) return;
+    setState(() {
+      _runtimeStatusRefreshing = true;
+    });
+    final runtimeStatus = await _fetchRuntimeStatus(_embeddingRuntimeMode);
+    if (!mounted) return;
+    setState(() {
+      _runtimeStatus = runtimeStatus;
+      _runtimeStatusRefreshing = false;
     });
   }
 
@@ -76,6 +105,7 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _embeddingRuntimeMode = mode);
     _settings.embeddingRuntimeMode = mode.toStorageValue();
     _embeddingIndexStatusService.requestFullRebuild();
+    unawaited(_refreshRuntimeStatus());
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Embedding runtime updated. Full reindex requested.'),
@@ -247,6 +277,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                 ),
+                _buildRuntimeStatusCard(),
                 _buildEmbeddingIndexProgressCard(),
                 const Divider(),
                 _sectionHeader('Advanced'),
@@ -287,41 +318,53 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context, state, _) {
         final progress = state.progress.clamp(0.0, 1.0).toDouble();
         final isRunning = state.status == IndexJobStatus.running;
-        final isCompleted = state.status == IndexJobStatus.completed;
-
-        String headline;
-        Color color = AppThemeTokens.textSecondary;
-        switch (state.status) {
-          case IndexJobStatus.idle:
-            headline = 'Not indexed yet';
-            break;
-          case IndexJobStatus.running:
-            headline = 'Indexing embeddings';
-            color = AppThemeTokens.accent;
-            break;
-          case IndexJobStatus.completed:
-            headline = 'Embedding index ready';
-            color = Colors.green;
-            break;
-          case IndexJobStatus.failed:
-            headline = 'Indexing failed';
-            color = Colors.redAccent;
-            break;
-          case IndexJobStatus.canceled:
-            headline = 'Indexing canceled';
-            color = Colors.orangeAccent;
-            break;
-        }
-
-        final progressLabel = isRunning
-            ? '${(progress * 100).toStringAsFixed(0)}%'
-            : isCompleted
-            ? '100%'
-            : '0%';
 
         return ValueListenableBuilder<EmbeddingIndexMetadata>(
           valueListenable: _embeddingIndexStatusService.metadata,
           builder: (context, metadata, _) {
+            final hasIndexedContent =
+                metadata.indexedVideos > 0 ||
+                metadata.indexedFrames > 0 ||
+                metadata.lastRunAt != null;
+            final isReady =
+                state.status == IndexJobStatus.completed ||
+                (state.status == IndexJobStatus.idle && hasIndexedContent);
+
+            String headline;
+            Color color = AppThemeTokens.textSecondary;
+            switch (state.status) {
+              case IndexJobStatus.idle:
+                if (hasIndexedContent) {
+                  headline = 'Embedding index ready';
+                  color = Colors.green;
+                } else {
+                  headline = 'Not indexed yet';
+                }
+                break;
+              case IndexJobStatus.running:
+                headline = 'Indexing embeddings';
+                color = AppThemeTokens.accent;
+                break;
+              case IndexJobStatus.completed:
+                headline = 'Embedding index ready';
+                color = Colors.green;
+                break;
+              case IndexJobStatus.failed:
+                headline = 'Indexing failed';
+                color = Colors.redAccent;
+                break;
+              case IndexJobStatus.canceled:
+                headline = 'Indexing canceled';
+                color = Colors.orangeAccent;
+                break;
+            }
+
+            final progressLabel = isRunning
+                ? '${(progress * 100).toStringAsFixed(0)}%'
+                : isReady
+                ? '100%'
+                : '0%';
+
             return ListTile(
               title: Text(
                 'On-device embedding index',
@@ -342,7 +385,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: LinearProgressIndicator(
                         value: isRunning
                             ? progress
-                            : isCompleted
+                            : isReady
                             ? 1
                             : 0,
                         minHeight: 7,
@@ -350,7 +393,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         valueColor: AlwaysStoppedAnimation<Color>(
                           isRunning
                               ? AppThemeTokens.accent
-                              : isCompleted
+                              : isReady
                               ? Colors.green
                               : AppThemeTokens.textSecondary,
                         ),
@@ -377,6 +420,13 @@ class _SettingsPageState extends State<SettingsPage> {
                       style: GoogleFonts.lato(
                         fontSize: 12,
                         color: AppThemeTokens.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      'Search-ready: ${isReady ? 'Yes' : 'No'}',
+                      style: GoogleFonts.lato(
+                        fontSize: 12,
+                        color: isReady ? Colors.green : AppThemeTokens.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -416,6 +466,92 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildRuntimeStatusCard() {
+    final mode = _embeddingRuntimeMode;
+    final status = _runtimeStatus;
+
+    String headline;
+    Color color = AppThemeTokens.textSecondary;
+    if (mode == EmbeddingRuntimeMode.deterministic) {
+      headline = 'Deterministic mode active';
+      color = Colors.orangeAccent;
+    } else if (_runtimeStatusRefreshing && status == null) {
+      headline = 'Checking runtime status...';
+    } else if (status == null) {
+      headline = 'Runtime status unavailable on this device.';
+      color = Colors.orangeAccent;
+    } else if (status.ready) {
+      headline = 'On-device model runtime ready';
+      color = Colors.green;
+    } else {
+      headline = 'On-device model runtime unavailable';
+      color = Colors.redAccent;
+    }
+
+    final detailParts = <String>[];
+    if (status?.runtimeName != null && status!.runtimeName!.isNotEmpty) {
+      detailParts.add(status.runtimeName!);
+    }
+    if (status?.provider != null && status!.provider!.isNotEmpty) {
+      detailParts.add(status.provider!);
+    }
+    if (status?.dimensions != null) {
+      detailParts.add('${status!.dimensions}d');
+    }
+    if (status != null) {
+      detailParts.add(status.quantized ? 'quantized' : 'non-quantized');
+    }
+    if (mode == EmbeddingRuntimeMode.deterministic) {
+      detailParts.add('semantic indexing disabled');
+    }
+
+    return ListTile(
+      title: Text('On-device model runtime', style: GoogleFonts.lato()),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              headline,
+              style: GoogleFonts.lato(fontSize: 12, color: color),
+            ),
+            if (detailParts.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                detailParts.join(' • '),
+                style: GoogleFonts.lato(
+                  fontSize: 12,
+                  color: AppThemeTokens.textSecondary,
+                ),
+              ),
+            ],
+            if (status?.reason != null && status!.reason!.trim().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                status.reason!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.lato(fontSize: 11, color: Colors.redAccent),
+              ),
+            ],
+          ],
+        ),
+      ),
+      trailing: _runtimeStatusRefreshing
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : IconButton(
+              tooltip: 'Refresh runtime status',
+              onPressed: _refreshRuntimeStatus,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
     );
   }
 

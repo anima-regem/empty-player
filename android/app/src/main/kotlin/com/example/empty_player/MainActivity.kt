@@ -39,7 +39,7 @@ class MainActivity : FlutterActivity() {
     private var mediaSession: MediaSessionCompat? = null
     private var isInPipMode = false
     private var transportState = TransportState()
-    private val embeddingEngine by lazy { OnnxMultimodalEmbeddingEngine(applicationContext) }
+    private val embeddingEngine by lazy { AndroidMultimodalEmbeddingEngine(applicationContext) }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

@@ -81,6 +81,7 @@ flutter:
     - assets/empty.png
     - assets/models/embedding_manifest.json
     - assets/models/clip/
+    - assets/models/mobileclip/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -1146,6 +1146,8 @@ class _HomePageState extends State<HomePage>
               alignment: Alignment.centerRight,
               child: _buildSortButton(compact: true),
             ),
+            const SizedBox(height: 8),
+            _buildSemanticReadinessBanner(),
             if (_semanticError != null &&
                 _semanticError!.trim().isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -1177,6 +1179,8 @@ class _HomePageState extends State<HomePage>
               _buildSortButton(compact: false),
             ],
           ),
+          const SizedBox(height: 8),
+          _buildSemanticReadinessBanner(),
           if (_semanticError != null && _semanticError!.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -1188,6 +1192,76 @@ class _HomePageState extends State<HomePage>
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildSemanticReadinessBanner() {
+    return ValueListenableBuilder<EmbeddingIndexMetadata>(
+      valueListenable: _embeddingIndexStatus.metadata,
+      builder: (context, metadata, _) {
+        final hasIndexedContent =
+            metadata.indexedVideos > 0 ||
+            metadata.indexedFrames > 0 ||
+            metadata.lastRunAt != null;
+        final isReady =
+            _semanticRuntimeAvailable &&
+            !_semanticIndexing &&
+            (_semanticReady || hasIndexedContent);
+
+        IconData icon;
+        Color color;
+        String headline;
+
+        if (!_semanticRuntimeAvailable) {
+          icon = Icons.error_outline_rounded;
+          color = Colors.redAccent;
+          headline = 'On-device model unavailable';
+        } else if (_semanticIndexing) {
+          icon = Icons.sync_rounded;
+          color = AppThemeTokens.accent;
+          headline = 'Building on-device index...';
+        } else if (isReady) {
+          icon = Icons.check_circle_outline_rounded;
+          color = Colors.green;
+          headline = 'On-device index ready';
+        } else {
+          icon = Icons.hourglass_empty_rounded;
+          color = AppThemeTokens.textSecondary;
+          headline = 'On-device index not ready';
+        }
+
+        final details =
+            metadata.indexedVideos > 0 || metadata.indexedFrames > 0
+            ? '${metadata.indexedVideos} videos • ${metadata.indexedFrames} frames'
+            : null;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppThemeTokens.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppThemeTokens.surfaceAlt),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  details == null ? headline : '$headline • $details',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.lato(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

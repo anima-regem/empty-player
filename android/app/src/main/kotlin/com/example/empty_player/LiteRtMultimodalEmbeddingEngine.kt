@@ -1,9 +1,5 @@
 package com.example.empty_player
 
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
-import ai.onnxruntime.TensorInfo
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -12,21 +8,22 @@ import android.net.Uri
 import io.flutter.FlutterInjector
 import org.json.JSONArray
 import org.json.JSONObject
+import org.tensorflow.lite.DataType
+import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.Tensor
 import java.io.File
 import java.io.InputStream
-import java.nio.FloatBuffer
-import java.nio.LongBuffer
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-class OnnxMultimodalEmbeddingEngine(
+class LiteRtMultimodalEmbeddingEngine(
     private val context: Context,
 ) {
-    private val environment: OrtEnvironment = OrtEnvironment.getEnvironment()
-
     @Volatile
     private var initialized = false
     private var initError: String? = null
@@ -43,10 +40,9 @@ class OnnxMultimodalEmbeddingEngine(
     private var imageMean: FloatArray = floatArrayOf(0.48145466f, 0.4578275f, 0.40821073f)
     private var imageStd: FloatArray = floatArrayOf(0.26862954f, 0.26130258f, 0.27577711f)
 
-    private var textSession: OrtSession? = null
-    private var visionSession: OrtSession? = null
-
-    private var tokenizer: ClipBPETokenizer? = null
+    private var textInterpreter: Interpreter? = null
+    private var visionInterpreter: Interpreter? = null
+    private var tokenizer: LiteRtClipBPETokenizer? = null
 
     data class RuntimeStatus(
         val ready: Boolean,
@@ -55,62 +51,29 @@ class OnnxMultimodalEmbeddingEngine(
         val quantized: Boolean,
         val dimensions: Int,
         val reason: String?,
-    ) {
-        fun toMap(): Map<String, Any?> {
-            return mapOf(
-                "ready" to ready,
-                "runtimeName" to runtimeName,
-                "provider" to provider,
-                "quantized" to quantized,
-                "dimensions" to dimensions,
-                "reason" to reason,
-            )
-        }
-    }
+    )
 
     fun runtimeStatus(): RuntimeStatus {
         ensureInitialized()
-        val ready = textSession != null && visionSession != null && tokenizer != null
+        val ready = textInterpreter != null && visionInterpreter != null && tokenizer != null
         return RuntimeStatus(
             ready = ready,
             runtimeName = runtimeName,
             provider = provider,
             quantized = quantized,
             dimensions = dimensions,
-            reason = if (ready) null else (initError ?: "Embedding runtime is not initialized."),
+            reason = if (ready) null else (initError ?: "LiteRT runtime is not initialized."),
         )
     }
 
     fun embedText(query: String, requestedDimensions: Int): List<Double> {
         ensureReady()
         val localTokenizer = tokenizer ?: throw IllegalStateException("Tokenizer unavailable")
-        val localSession = textSession ?: throw IllegalStateException("Text model unavailable")
+        val localInterpreter = textInterpreter ?: throw IllegalStateException("Text model unavailable")
 
-        val inputIds = localTokenizer.encode(query)
-        val inputName = localSession.inputNames.firstOrNull()
-            ?: throw IllegalStateException("Text model has no input tensor")
-
-        val inputTensor = OnnxTensor.createTensor(
-            environment,
-            LongBuffer.wrap(inputIds),
-            longArrayOf(1, inputIds.size.toLong()),
-        )
-        val vector = try {
-            val result = localSession.run(mapOf(inputName to inputTensor))
-            try {
-                if (result.size() <= 0) {
-                    throw IllegalStateException("Text model returned no output")
-                }
-                val outputTensor = result.get(0) as? OnnxTensor
-                    ?: throw IllegalStateException("Text model output is not a tensor")
-                extractEmbeddingVector(outputTensor)
-            } finally {
-                result.close()
-            }
-        } finally {
-            inputTensor.close()
-        }
-
+        val tokenIds = localTokenizer.encode(query)
+        val inputs = buildTextInputs(localInterpreter, tokenIds)
+        val vector = runInterpreter(localInterpreter, inputs)
         return resizeAndNormalize(vector, requestedDimensions)
     }
 
@@ -183,45 +146,19 @@ class OnnxMultimodalEmbeddingEngine(
 
     private fun embedBitmap(bitmap: Bitmap, requestedDimensions: Int): List<Double> {
         ensureReady()
-        val localVisionSession = visionSession ?: throw IllegalStateException("Vision model unavailable")
+        val localInterpreter = visionInterpreter ?: throw IllegalStateException("Vision model unavailable")
 
-        val inputInfo = localVisionSession.inputInfo.values.firstOrNull()?.info as? TensorInfo
-            ?: throw IllegalStateException("Vision model input metadata unavailable")
-        val inputName = localVisionSession.inputNames.firstOrNull()
-            ?: throw IllegalStateException("Vision model has no input tensor")
-        val shape = inputInfo.shape
-
-        val tensorData = buildImageTensor(bitmap, shape)
-        val inputTensor = OnnxTensor.createTensor(
-            environment,
-            FloatBuffer.wrap(tensorData.data),
-            tensorData.shape,
-        )
-
-        val vector = try {
-            val result = localVisionSession.run(mapOf(inputName to inputTensor))
-            try {
-                if (result.size() <= 0) {
-                    throw IllegalStateException("Vision model returned no output")
-                }
-                val outputTensor = result.get(0) as? OnnxTensor
-                    ?: throw IllegalStateException("Vision model output is not a tensor")
-                extractEmbeddingVector(outputTensor)
-            } finally {
-                result.close()
-            }
-        } finally {
-            inputTensor.close()
-        }
-
+        val inputTensor = localInterpreter.getInputTensor(0)
+        val inputBuffer = buildVisionInputBuffer(bitmap, inputTensor)
+        val vector = runInterpreter(localInterpreter, arrayOf(inputBuffer))
         return resizeAndNormalize(vector, requestedDimensions)
     }
 
     private fun ensureReady() {
         ensureInitialized()
-        val ready = textSession != null && visionSession != null && tokenizer != null
+        val ready = textInterpreter != null && visionInterpreter != null && tokenizer != null
         if (!ready) {
-            throw IllegalStateException(initError ?: "Embedding runtime is unavailable.")
+            throw IllegalStateException(initError ?: "LiteRT runtime is unavailable.")
         }
     }
 
@@ -248,7 +185,7 @@ class OnnxMultimodalEmbeddingEngine(
 
             val vocab = loadVocab(manifest.vocabAsset)
             val merges = loadMerges(manifest.mergesAsset)
-            tokenizer = ClipBPETokenizer(
+            tokenizer = LiteRtClipBPETokenizer(
                 vocab = vocab,
                 merges = merges,
                 contextLength = manifest.contextLength,
@@ -256,65 +193,58 @@ class OnnxMultimodalEmbeddingEngine(
 
             val textModelPath = copyAssetToCache(manifest.textModelAsset)
             val visionModelPath = copyAssetToCache(manifest.visionModelAsset)
-            createSessionsWithFallback(
+            createInterpretersWithFallback(
                 textModelPath = textModelPath,
                 visionModelPath = visionModelPath,
             )
             initError = null
         } catch (error: Exception) {
-            textSession?.close()
-            visionSession?.close()
-            textSession = null
-            visionSession = null
+            clearInterpreters()
             tokenizer = null
             provider = "none"
             runtimeName = "embedding_unavailable"
             dimensions = 0
             quantized = false
-            initError = error.message ?: "Failed to initialize ONNX embedding engine."
+            initError = error.message ?: "Failed to initialize LiteRT embedding engine."
         }
     }
 
-    private fun createSessionsWithFallback(
+    private fun createInterpretersWithFallback(
         textModelPath: File,
         visionModelPath: File,
     ) {
         val failures = mutableListOf<String>()
 
-        // First pass: try NNAPI when available for better latency/power.
-        val nnapiOptions = createSessionOptions()
-        val nnapiEnabled = tryEnableNnapi(nnapiOptions)
-        if (nnapiEnabled) {
-            try {
-                createSessions(
-                    textModelPath = textModelPath,
-                    visionModelPath = visionModelPath,
-                    options = nnapiOptions,
-                )
-                provider = "onnxruntime_nnapi"
-                return
-            } catch (error: Exception) {
-                clearSessions()
-                failures.add("NNAPI: ${extractReadableError(error)}")
-            }
-        }
-
-        // Second pass: always try CPU as a safety net when NNAPI is missing or not implemented.
-        val cpuOptions = createSessionOptions()
+        val nnapiOptions = createInterpreterOptions(enableNnapi = true)
         try {
-            createSessions(
-                textModelPath = textModelPath,
-                visionModelPath = visionModelPath,
-                options = cpuOptions,
-            )
-            provider = "onnxruntime_cpu"
+            val nnapiText = Interpreter(textModelPath, nnapiOptions)
+            val nnapiVision = Interpreter(visionModelPath, nnapiOptions)
+            val localTokenizer = tokenizer ?: throw IllegalStateException("Tokenizer unavailable")
+            warmup(nnapiText, nnapiVision, localTokenizer)
+            textInterpreter = nnapiText
+            visionInterpreter = nnapiVision
+            provider = "litert_nnapi"
             return
         } catch (error: Exception) {
-            clearSessions()
+            clearInterpreters()
+            failures.add("NNAPI: ${extractReadableError(error)}")
+        }
+
+        val cpuOptions = createInterpreterOptions(enableNnapi = false)
+        try {
+            val cpuText = Interpreter(textModelPath, cpuOptions)
+            val cpuVision = Interpreter(visionModelPath, cpuOptions)
+            val localTokenizer = tokenizer ?: throw IllegalStateException("Tokenizer unavailable")
+            warmup(cpuText, cpuVision, localTokenizer)
+            textInterpreter = cpuText
+            visionInterpreter = cpuVision
+            provider = "litert_cpu"
+            return
+        } catch (error: Exception) {
+            clearInterpreters()
             failures.add("CPU: ${extractReadableError(error)}")
         }
 
-        // One forced recopy pass for interrupted/corrupt cache writes.
         val freshTextPath = copyAssetToCache(
             textModelAsset ?: textModelPath.name,
             forceRewrite = true,
@@ -325,348 +255,163 @@ class OnnxMultimodalEmbeddingEngine(
         )
 
         try {
-            createSessions(
-                textModelPath = freshTextPath,
-                visionModelPath = freshVisionPath,
-                options = createSessionOptions(),
-            )
-            provider = "onnxruntime_cpu"
+            val cpuText = Interpreter(freshTextPath, cpuOptions)
+            val cpuVision = Interpreter(freshVisionPath, cpuOptions)
+            val localTokenizer = tokenizer ?: throw IllegalStateException("Tokenizer unavailable")
+            warmup(cpuText, cpuVision, localTokenizer)
+            textInterpreter = cpuText
+            visionInterpreter = cpuVision
+            provider = "litert_cpu"
             return
         } catch (error: Exception) {
-            clearSessions()
+            clearInterpreters()
             failures.add("CPU (after recopy): ${extractReadableError(error)}")
-        }
-
-        // Final pass: if int8 kernels are not implemented on this device build,
-        // try sibling fp32 model assets when packaged with the app.
-        val fp32Assets = fp32FallbackAssets()
-        if (fp32Assets != null) {
-            try {
-                val fp32TextPath = copyAssetToCache(fp32Assets.first)
-                val fp32VisionPath = copyAssetToCache(fp32Assets.second)
-                createSessions(
-                    textModelPath = fp32TextPath,
-                    visionModelPath = fp32VisionPath,
-                    options = createSessionOptions(),
-                )
-                provider = "onnxruntime_cpu"
-                quantized = false
-                runtimeName = "${runtimeName}_fp32_fallback"
-                return
-            } catch (error: Exception) {
-                clearSessions()
-                failures.add("FP32 fallback: ${extractReadableError(error)}")
-            }
         }
 
         val detail = failures.joinToString(" | ")
         throw IllegalStateException(
             if (detail.isBlank()) {
-                "ONNX runtime failed to initialize."
+                "LiteRT runtime failed to initialize."
             } else {
-                "ONNX runtime failed to initialize. $detail"
+                "LiteRT runtime failed to initialize. $detail"
             },
         )
     }
 
-    private fun createSessionOptions(): OrtSession.SessionOptions {
-        return OrtSession.SessionOptions().apply {
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            setIntraOpNumThreads(2)
-            setInterOpNumThreads(1)
-        }
-    }
-
-    private fun createSessions(
-        textModelPath: File,
-        visionModelPath: File,
-        options: OrtSession.SessionOptions,
+    private fun warmup(
+        text: Interpreter,
+        vision: Interpreter,
+        localTokenizer: LiteRtClipBPETokenizer,
     ) {
-        textSession = environment.createSession(textModelPath.absolutePath, options)
-        visionSession = environment.createSession(visionModelPath.absolutePath, options)
-    }
+        val tokenIds = localTokenizer.encode("warmup")
+        val textInputs = buildTextInputs(text, tokenIds)
+        runInterpreter(text, textInputs)
 
-    private fun clearSessions() {
-        textSession?.close()
-        visionSession?.close()
-        textSession = null
-        visionSession = null
-    }
-
-    private fun extractReadableError(error: Throwable): String {
-        val raw = (error.message ?: error.toString()).trim()
-        if (raw.isEmpty()) return "unknown error"
-        return raw
-            .replace('\n', ' ')
-            .replace(Regex("\\s+"), " ")
-            .take(280)
-    }
-
-    private fun fp32FallbackAssets(): Pair<String, String>? {
-        val textAsset = textModelAsset ?: return null
-        val visionAsset = visionModelAsset ?: return null
-        if (!textAsset.endsWith("_int8.onnx") || !visionAsset.endsWith("_int8.onnx")) {
-            return null
-        }
-
-        val fp32Text = textAsset.replace("_int8.onnx", ".onnx")
-        val fp32Vision = visionAsset.replace("_int8.onnx", ".onnx")
-        if (!assetExists(fp32Text) || !assetExists(fp32Vision)) {
-            return null
-        }
-        return fp32Text to fp32Vision
-    }
-
-    private fun assetExists(assetPath: String): Boolean {
-        return try {
-            openAsset(assetPath).use { _ -> }
-            true
-        } catch (_: Exception) {
-            false
+        val targetSize = max(1, imageInputSize)
+        val bitmap = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+        try {
+            val visionInput = buildVisionInputBuffer(bitmap, vision.getInputTensor(0))
+            runInterpreter(vision, arrayOf(visionInput))
+        } finally {
+            bitmap.recycle()
         }
     }
 
-    private fun tryEnableNnapi(options: OrtSession.SessionOptions): Boolean {
-        return try {
-            val method = options.javaClass.methods.firstOrNull {
-                it.name == "addNnapi" && it.parameterCount == 0
-            }
-            if (method != null) {
-                method.invoke(options)
-                return true
-            }
+    private fun createInterpreterOptions(enableNnapi: Boolean): Interpreter.Options {
+        return Interpreter.Options().apply {
+            setNumThreads(2)
+            setUseNNAPI(enableNnapi)
+        }
+    }
 
-            val methodWithArgs = options.javaClass.methods.firstOrNull {
-                it.name == "addNnapi" && it.parameterCount == 1
-            }
-            if (methodWithArgs != null) {
-                val parameter = methodWithArgs.parameterTypes.first()
-                if (Map::class.java.isAssignableFrom(parameter)) {
-                    methodWithArgs.invoke(options, emptyMap<String, String>())
-                } else {
-                    methodWithArgs.invoke(options, null)
+    private fun clearInterpreters() {
+        textInterpreter?.close()
+        visionInterpreter?.close()
+        textInterpreter = null
+        visionInterpreter = null
+    }
+
+    private fun buildTextInputs(
+        interpreter: Interpreter,
+        tokenIds: LongArray,
+    ): Array<Any> {
+        val inputCount = interpreter.inputTensorCount
+        val inputs = ArrayList<Any>(inputCount)
+        for (index in 0 until inputCount) {
+            val tensor = interpreter.getInputTensor(index)
+            val tensorName = tensor.name().lowercase()
+            val values = when {
+                tensorName.contains("mask") -> LongArray(tokenIds.size) { 1L }
+                tensorName.contains("token_type") || tensorName.contains("segment") -> {
+                    LongArray(tokenIds.size)
                 }
-                return true
+                tensorName.contains("position") -> LongArray(tokenIds.size) { it.toLong() }
+                else -> tokenIds
             }
-            false
-        } catch (_: Exception) {
-            false
+            inputs.add(buildSequenceInputBuffer(values, tensor))
         }
+        return inputs.toTypedArray()
     }
 
-    private fun copyAssetToCache(
-        assetPath: String,
-        forceRewrite: Boolean = false,
-    ): File {
-        val dir = File(context.filesDir, "embedding_models")
-        if (!dir.exists()) {
-            dir.mkdirs()
+    private fun buildSequenceInputBuffer(values: LongArray, tensor: Tensor): ByteBuffer {
+        val shape = tensor.shape()
+        val totalElements = shape.fold(1) { acc, dim ->
+            val safeDim = if (dim <= 0) 1 else dim
+            acc * safeDim
         }
+        val dataType = tensor.dataType()
+        val quant = tensor.quantizationParams()
 
-        val safeName = assetPath.replace('/', '_')
-        val target = File(dir, safeName)
-        if (!forceRewrite && target.exists() && target.length() > 0) {
-            return target
-        }
-
-        val tmp = File(dir, "$safeName.tmp")
-        if (tmp.exists()) {
-            tmp.delete()
-        }
-
-        openAsset(assetPath).use { input ->
-            tmp.outputStream().use { output ->
-                input.copyTo(output)
-            }
-        }
-        if (tmp.length() <= 0) {
-            tmp.delete()
-            throw IllegalStateException("Failed to copy asset to cache: $assetPath")
-        }
-
-        if (target.exists()) {
-            target.delete()
-        }
-        if (!tmp.renameTo(target)) {
-            tmp.inputStream().use { input ->
-                target.outputStream().use { output ->
-                    input.copyTo(output)
+        val buffer = ByteBuffer.allocateDirect(tensor.numBytes()).order(ByteOrder.nativeOrder())
+        for (index in 0 until totalElements) {
+            val value = if (index < values.size) values[index] else values.lastOrNull() ?: 0L
+            when (dataType) {
+                DataType.INT32 -> buffer.putInt(value.toInt())
+                DataType.INT64 -> buffer.putLong(value)
+                DataType.FLOAT32 -> buffer.putFloat(value.toFloat())
+                DataType.UINT8 -> {
+                    val quantized = quantizeToUInt8(
+                        value = value.toFloat(),
+                        scale = quant.scale,
+                        zeroPoint = quant.zeroPoint,
+                    )
+                    buffer.put(quantized.toByte())
                 }
-            }
-            tmp.delete()
-        }
-        return target
-    }
-
-    private fun loadManifest(): EngineManifest {
-        val raw = readAssetText(MANIFEST_ASSET_PATH)
-        val json = JSONObject(raw)
-
-        val runtimeName = json.optString("runtimeName", "onnx_multimodal")
-        val quantized = json.optBoolean("quantized", true)
-        val dimensions = json.optInt("dimensions", 512)
-        val contextLength = json.optInt("contextLength", 77)
-
-        val textModelAsset = json.optString("textModelAsset").trim()
-        val visionModelAsset = json.optString("visionModelAsset").trim()
-        if (textModelAsset.isEmpty() || visionModelAsset.isEmpty()) {
-            throw IllegalStateException("Manifest is missing model asset paths.")
-        }
-
-        val tokenizerJson = json.optJSONObject("tokenizer")
-            ?: throw IllegalStateException("Manifest tokenizer config is missing.")
-        val vocabAsset = tokenizerJson.optString("vocabAsset").trim()
-        val mergesAsset = tokenizerJson.optString("mergesAsset").trim()
-        if (vocabAsset.isEmpty() || mergesAsset.isEmpty()) {
-            throw IllegalStateException("Manifest tokenizer assets are missing.")
-        }
-
-        val imageJson = json.optJSONObject("image")
-        val inputSize = imageJson?.optInt("inputSize", 224) ?: 224
-        val mean = imageJson?.optJSONArray("mean")?.toFloatArray(3)
-            ?: floatArrayOf(0.48145466f, 0.4578275f, 0.40821073f)
-        val std = imageJson?.optJSONArray("std")?.toFloatArray(3)
-            ?: floatArrayOf(0.26862954f, 0.26130258f, 0.27577711f)
-
-        verifyAssetExists(textModelAsset)
-        verifyAssetExists(visionModelAsset)
-        verifyAssetExists(vocabAsset)
-        verifyAssetExists(mergesAsset)
-
-        return EngineManifest(
-            runtimeName = runtimeName,
-            quantized = quantized,
-            dimensions = dimensions,
-            contextLength = contextLength,
-            textModelAsset = textModelAsset,
-            visionModelAsset = visionModelAsset,
-            vocabAsset = vocabAsset,
-            mergesAsset = mergesAsset,
-            imageInputSize = inputSize,
-            imageMean = mean,
-            imageStd = std,
-        )
-    }
-
-    private fun verifyAssetExists(assetPath: String) {
-        openAsset(assetPath).use { _ -> }
-    }
-
-    private fun loadVocab(assetPath: String): Map<String, Int> {
-        val raw = readAssetText(assetPath)
-        val json = JSONObject(raw)
-        val result = HashMap<String, Int>(json.length())
-        val keys = json.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            result[key] = json.getInt(key)
-        }
-        return result
-    }
-
-    private fun loadMerges(assetPath: String): List<Pair<String, String>> {
-        val lines = openAsset(assetPath).bufferedReader().use { it.readLines() }
-        val merges = ArrayList<Pair<String, String>>(lines.size)
-        for (line in lines) {
-            val normalized = line.trim()
-            if (normalized.isEmpty() || normalized.startsWith("#")) continue
-            val parts = normalized.split(' ')
-            if (parts.size < 2) continue
-            merges.add(parts[0] to parts[1])
-        }
-        return merges
-    }
-
-    private fun extractEmbeddingVector(tensor: OnnxTensor): FloatArray {
-        val value = tensor.value
-        val flattened = flattenTensorValue(value)
-        if (flattened.isEmpty()) {
-            throw IllegalStateException("Model returned an empty embedding vector.")
-        }
-        return flattened
-    }
-
-    private fun flattenTensorValue(value: Any?): FloatArray {
-        return when (value) {
-            is FloatArray -> value
-            is Array<*> -> {
-                if (value.isEmpty()) {
-                    floatArrayOf()
-                } else {
-                    val first = value.firstOrNull()
-                    when (first) {
-                        is FloatArray -> first
-                        is Array<*> -> {
-                            val list = ArrayList<Float>()
-                            for (item in value) {
-                                val sub = flattenTensorValue(item)
-                                for (v in sub) {
-                                    list.add(v)
-                                }
-                            }
-                            list.toFloatArray()
-                        }
-                        else -> floatArrayOf()
-                    }
+                DataType.INT8 -> {
+                    val quantized = quantizeToInt8(
+                        value = value.toFloat(),
+                        scale = quant.scale,
+                        zeroPoint = quant.zeroPoint,
+                    )
+                    buffer.put(quantized.toByte())
                 }
+                else -> throw IllegalStateException("Unsupported text tensor input type: $dataType")
             }
-            else -> floatArrayOf()
         }
+        buffer.rewind()
+        return buffer
     }
 
-    private fun buildImageTensor(bitmap: Bitmap, modelShape: LongArray): TensorData {
-        val targetSize = if (imageInputSize > 0) imageInputSize else 224
+    private fun buildVisionInputBuffer(bitmap: Bitmap, inputTensor: Tensor): ByteBuffer {
+        val modelShape = inputTensor.shape()
+        if (modelShape.size != 4) {
+            throw IllegalStateException("Expected vision input rank 4, got ${modelShape.size}.")
+        }
+
+        val channelsLast = modelShape[3] == 3
+        val channelsFirst = modelShape[1] == 3
+        if (!channelsLast && !channelsFirst) {
+            throw IllegalStateException("Unsupported vision input shape: ${modelShape.contentToString()}")
+        }
+
+        val targetHeight = if (channelsLast) {
+            if (modelShape[1] > 0) modelShape[1] else imageInputSize
+        } else {
+            if (modelShape[2] > 0) modelShape[2] else imageInputSize
+        }
+        val targetWidth = if (channelsLast) {
+            if (modelShape[2] > 0) modelShape[2] else imageInputSize
+        } else {
+            if (modelShape[3] > 0) modelShape[3] else imageInputSize
+        }
+
         val cropped = centerCropSquare(bitmap)
-        val resized = Bitmap.createScaledBitmap(cropped, targetSize, targetSize, true)
+        val resized = Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
         if (cropped !== bitmap) {
             cropped.recycle()
         }
 
-        val shape = modelShape.copyOf()
-        if (shape.size != 4) {
-            throw IllegalStateException("Expected vision input rank 4, got ${shape.size}.")
-        }
+        val pixels = IntArray(targetWidth * targetHeight)
+        resized.getPixels(pixels, 0, targetWidth, 0, 0, targetWidth, targetHeight)
+        resized.recycle()
 
-        val n = if (shape[0] <= 0) 1 else shape[0].toInt()
-        val h: Int
-        val w: Int
-        val channelsLast: Boolean
-        if (shape[1] == 3L) {
-            channelsLast = false
-            h = if (shape[2] <= 0) targetSize else shape[2].toInt()
-            w = if (shape[3] <= 0) targetSize else shape[3].toInt()
-        } else if (shape[3] == 3L) {
-            channelsLast = true
-            h = if (shape[1] <= 0) targetSize else shape[1].toInt()
-            w = if (shape[2] <= 0) targetSize else shape[2].toInt()
-        } else {
-            channelsLast = false
-            h = targetSize
-            w = targetSize
-            shape[1] = 3
-            shape[2] = h.toLong()
-            shape[3] = w.toLong()
-        }
-
-        val resizedForInput = if (resized.width == w && resized.height == h) {
-            resized
-        } else {
-            Bitmap.createScaledBitmap(resized, w, h, true)
-        }
-        if (resizedForInput !== resized) {
-            resized.recycle()
-        }
-
-        val pixels = IntArray(w * h)
-        resizedForInput.getPixels(pixels, 0, w, 0, 0, w, h)
-        resizedForInput.recycle()
-
-        val batch = max(1, n)
-        val data = FloatArray(batch * 3 * h * w)
+        val dataType = inputTensor.dataType()
+        val quant = inputTensor.quantizationParams()
+        val values = FloatArray(targetWidth * targetHeight * 3)
 
         var pixelIndex = 0
-        for (y in 0 until h) {
-            for (x in 0 until w) {
+        for (y in 0 until targetHeight) {
+            for (x in 0 until targetWidth) {
                 val color = pixels[pixelIndex]
                 val r = ((color shr 16) and 0xff) / 255.0f
                 val g = ((color shr 8) and 0xff) / 255.0f
@@ -677,31 +422,152 @@ class OnnxMultimodalEmbeddingEngine(
                 val nb = (b - imageMean[2]) / imageStd[2]
 
                 if (channelsLast) {
-                    val base = (y * w + x) * 3
-                    data[base] = nr
-                    data[base + 1] = ng
-                    data[base + 2] = nb
+                    val base = (y * targetWidth + x) * 3
+                    values[base] = nr
+                    values[base + 1] = ng
+                    values[base + 2] = nb
                 } else {
-                    val hw = h * w
-                    val offset = y * w + x
-                    data[offset] = nr
-                    data[hw + offset] = ng
-                    data[(2 * hw) + offset] = nb
+                    val hw = targetHeight * targetWidth
+                    val offset = y * targetWidth + x
+                    values[offset] = nr
+                    values[hw + offset] = ng
+                    values[(2 * hw) + offset] = nb
                 }
-
-                pixelIndex++
+                pixelIndex += 1
             }
         }
 
-        return TensorData(
-            shape = longArrayOf(
-                1L,
-                if (channelsLast) h.toLong() else 3L,
-                if (channelsLast) w.toLong() else h.toLong(),
-                if (channelsLast) 3L else w.toLong(),
-            ),
-            data = data,
-        )
+        val buffer = ByteBuffer.allocateDirect(inputTensor.numBytes()).order(ByteOrder.nativeOrder())
+        for (value in values) {
+            when (dataType) {
+                DataType.FLOAT32 -> buffer.putFloat(value)
+                DataType.UINT8 -> {
+                    val quantized = quantizeToUInt8(
+                        value = value,
+                        scale = quant.scale,
+                        zeroPoint = quant.zeroPoint,
+                    )
+                    buffer.put(quantized.toByte())
+                }
+                DataType.INT8 -> {
+                    val quantized = quantizeToInt8(
+                        value = value,
+                        scale = quant.scale,
+                        zeroPoint = quant.zeroPoint,
+                    )
+                    buffer.put(quantized.toByte())
+                }
+                else -> throw IllegalStateException("Unsupported vision input type: $dataType")
+            }
+        }
+        buffer.rewind()
+        return buffer
+    }
+
+    private fun runInterpreter(interpreter: Interpreter, inputs: Array<Any>): FloatArray {
+        if (interpreter.outputTensorCount <= 0) {
+            throw IllegalStateException("Model returned no output tensor.")
+        }
+        val outputTensor = interpreter.getOutputTensor(0)
+        val outputBuffer = ByteBuffer
+            .allocateDirect(outputTensor.numBytes())
+            .order(ByteOrder.nativeOrder())
+        val outputs = HashMap<Int, Any>(1)
+        outputs[0] = outputBuffer
+
+        interpreter.runForMultipleInputsOutputs(inputs, outputs)
+        outputBuffer.rewind()
+
+        val decoded = decodeOutputTensor(outputTensor, outputBuffer)
+        if (decoded.isEmpty()) {
+            throw IllegalStateException("Model returned an empty embedding vector.")
+        }
+        return selectLikelyEmbeddingSlice(outputTensor.shape(), decoded)
+    }
+
+    private fun decodeOutputTensor(
+        tensor: Tensor,
+        buffer: ByteBuffer,
+    ): FloatArray {
+        val elementCount = tensor.numElements()
+        val dataType = tensor.dataType()
+        val quant = tensor.quantizationParams()
+
+        return when (dataType) {
+            DataType.FLOAT32 -> {
+                val result = FloatArray(elementCount)
+                for (index in 0 until elementCount) {
+                    result[index] = buffer.float
+                }
+                result
+            }
+            DataType.INT32 -> {
+                val result = FloatArray(elementCount)
+                for (index in 0 until elementCount) {
+                    result[index] = buffer.int.toFloat()
+                }
+                result
+            }
+            DataType.INT64 -> {
+                val result = FloatArray(elementCount)
+                for (index in 0 until elementCount) {
+                    result[index] = buffer.long.toFloat()
+                }
+                result
+            }
+            DataType.UINT8 -> {
+                val result = FloatArray(elementCount)
+                val scale = if (quant.scale == 0f) 1f else quant.scale
+                val zeroPoint = quant.zeroPoint
+                for (index in 0 until elementCount) {
+                    val raw = buffer.get().toInt() and 0xff
+                    result[index] = (raw - zeroPoint) * scale
+                }
+                result
+            }
+            DataType.INT8 -> {
+                val result = FloatArray(elementCount)
+                val scale = if (quant.scale == 0f) 1f else quant.scale
+                val zeroPoint = quant.zeroPoint
+                for (index in 0 until elementCount) {
+                    val raw = buffer.get().toInt()
+                    result[index] = (raw - zeroPoint) * scale
+                }
+                result
+            }
+            DataType.INT16 -> {
+                val result = FloatArray(elementCount)
+                for (index in 0 until elementCount) {
+                    result[index] = buffer.short.toFloat()
+                }
+                result
+            }
+            else -> throw IllegalStateException("Unsupported model output type: $dataType")
+        }
+    }
+
+    private fun selectLikelyEmbeddingSlice(shape: IntArray, flattened: FloatArray): FloatArray {
+        if (shape.isEmpty()) {
+            return flattened
+        }
+        val lastDim = shape.last()
+        if (lastDim <= 0 || flattened.size <= lastDim) {
+            return flattened
+        }
+
+        return flattened.copyOfRange(0, lastDim)
+    }
+
+    private fun quantizeToUInt8(value: Float, scale: Float, zeroPoint: Int): Int {
+        val safeScale = if (scale == 0f) 1f else scale
+        val quantized = (value / safeScale + zeroPoint).roundToInt()
+        return quantized.coerceIn(0, 255)
+    }
+
+    private fun quantizeToInt8(value: Float, scale: Float, zeroPoint: Int): Int {
+        val safeScale = if (scale == 0f) 1f else scale
+        val quantized = (value / safeScale + zeroPoint).roundToInt()
+        return quantized.coerceIn(-128, 127)
     }
 
     private fun centerCropSquare(bitmap: Bitmap): Bitmap {
@@ -764,6 +630,145 @@ class OnnxMultimodalEmbeddingEngine(
         return result
     }
 
+    private fun copyAssetToCache(
+        assetPath: String,
+        forceRewrite: Boolean = false,
+    ): File {
+        val dir = File(context.filesDir, "embedding_models")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+
+        val safeName = assetPath.replace('/', '_')
+        val target = File(dir, safeName)
+        if (!forceRewrite && target.exists() && target.length() > 0) {
+            return target
+        }
+
+        val tmp = File(dir, "$safeName.tmp")
+        if (tmp.exists()) {
+            tmp.delete()
+        }
+
+        openAsset(assetPath).use { input ->
+            tmp.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        if (tmp.length() <= 0) {
+            tmp.delete()
+            throw IllegalStateException("Failed to copy asset to cache: $assetPath")
+        }
+
+        if (target.exists()) {
+            target.delete()
+        }
+        if (!tmp.renameTo(target)) {
+            tmp.inputStream().use { input ->
+                target.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            tmp.delete()
+        }
+        return target
+    }
+
+    private fun loadManifest(): EngineManifest {
+        val raw = readAssetText(MANIFEST_ASSET_PATH)
+        val json = JSONObject(raw)
+
+        val runtimeName = json.optString("runtimeName", "mobileclip_litert")
+        val quantized = json.optBoolean("quantized", true)
+        val dimensions = json.optInt("dimensions", 512)
+        val contextLength = json.optInt("contextLength", 77)
+
+        val textModelAsset = json.optString("textModelAsset").trim()
+        val visionModelAsset = json.optString("visionModelAsset").trim()
+        if (textModelAsset.isEmpty() || visionModelAsset.isEmpty()) {
+            throw IllegalStateException("Manifest is missing model asset paths.")
+        }
+        if (!textModelAsset.lowercase().endsWith(".tflite") ||
+            !visionModelAsset.lowercase().endsWith(".tflite")
+        ) {
+            throw IllegalStateException(
+                "LiteRT backend requires .tflite text and vision model assets in embedding manifest.",
+            )
+        }
+
+        val tokenizerJson = json.optJSONObject("tokenizer")
+            ?: throw IllegalStateException("Manifest tokenizer config is missing.")
+        val vocabAsset = tokenizerJson.optString("vocabAsset").trim()
+        val mergesAsset = tokenizerJson.optString("mergesAsset").trim()
+        if (vocabAsset.isEmpty() || mergesAsset.isEmpty()) {
+            throw IllegalStateException("Manifest tokenizer assets are missing.")
+        }
+
+        val imageJson = json.optJSONObject("image")
+        val inputSize = imageJson?.optInt("inputSize", 224) ?: 224
+        val mean = imageJson?.optJSONArray("mean")?.toLiteRtFloatArray(3)
+            ?: floatArrayOf(0.48145466f, 0.4578275f, 0.40821073f)
+        val std = imageJson?.optJSONArray("std")?.toLiteRtFloatArray(3)
+            ?: floatArrayOf(0.26862954f, 0.26130258f, 0.27577711f)
+
+        verifyAssetExists(textModelAsset)
+        verifyAssetExists(visionModelAsset)
+        verifyAssetExists(vocabAsset)
+        verifyAssetExists(mergesAsset)
+
+        return EngineManifest(
+            runtimeName = runtimeName,
+            quantized = quantized,
+            dimensions = dimensions,
+            contextLength = contextLength,
+            textModelAsset = textModelAsset,
+            visionModelAsset = visionModelAsset,
+            vocabAsset = vocabAsset,
+            mergesAsset = mergesAsset,
+            imageInputSize = inputSize,
+            imageMean = mean,
+            imageStd = std,
+        )
+    }
+
+    private fun verifyAssetExists(assetPath: String) {
+        openAsset(assetPath).use { _ -> }
+    }
+
+    private fun loadVocab(assetPath: String): Map<String, Int> {
+        val raw = readAssetText(assetPath)
+        val json = JSONObject(raw)
+        val result = HashMap<String, Int>(json.length())
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            result[key] = json.getInt(key)
+        }
+        return result
+    }
+
+    private fun loadMerges(assetPath: String): List<Pair<String, String>> {
+        val lines = openAsset(assetPath).bufferedReader().use { it.readLines() }
+        val merges = ArrayList<Pair<String, String>>(lines.size)
+        for (line in lines) {
+            val normalized = line.trim()
+            if (normalized.isEmpty() || normalized.startsWith("#")) continue
+            val parts = normalized.split(' ')
+            if (parts.size < 2) continue
+            merges.add(parts[0] to parts[1])
+        }
+        return merges
+    }
+
+    private fun extractReadableError(error: Throwable): String {
+        val raw = (error.message ?: error.toString()).trim()
+        if (raw.isEmpty()) return "unknown error"
+        return raw
+            .replace('\n', ' ')
+            .replace(Regex("\\s+"), " ")
+            .take(280)
+    }
+
     private fun readAssetText(assetPath: String): String {
         return openAsset(assetPath).bufferedReader().use { it.readText() }
     }
@@ -821,14 +826,9 @@ class OnnxMultimodalEmbeddingEngine(
         val imageMean: FloatArray,
         val imageStd: FloatArray,
     )
-
-    data class TensorData(
-        val shape: LongArray,
-        val data: FloatArray,
-    )
 }
 
-private fun JSONArray.toFloatArray(expectedSize: Int): FloatArray {
+private fun JSONArray.toLiteRtFloatArray(expectedSize: Int): FloatArray {
     val size = if (length() > 0) length() else expectedSize
     val result = FloatArray(size)
     for (index in 0 until size) {
@@ -845,7 +845,7 @@ private fun JSONArray.toFloatArray(expectedSize: Int): FloatArray {
     return normalized
 }
 
-private class ClipBPETokenizer(
+private class LiteRtClipBPETokenizer(
     vocab: Map<String, Int>,
     merges: List<Pair<String, String>>,
     private val contextLength: Int,

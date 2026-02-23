@@ -26,4 +26,10 @@ fetch "merges.txt" "merges.txt"
 fetch "tokenizer.json" "tokenizer.json"
 fetch "preprocessor_config.json" "preprocessor_config.json"
 
+# Optional fp32 fallback models for devices where int8 ops are not implemented.
+if [[ "${INCLUDE_FP32:-0}" == "1" ]]; then
+  fetch "onnx/text_model.onnx" "text_model.onnx"
+  fetch "onnx/vision_model.onnx" "vision_model.onnx"
+fi
+
 echo "Done. Assets are in $OUT_DIR"
